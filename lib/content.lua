@@ -694,9 +694,20 @@ end
 function Content.download_remote_images(client, xhtml, used_names, progress)
     local assets = {}
     used_names = used_names or {}
+    used_names.__remote_image_hrefs = used_names.__remote_image_hrefs or {}
+    local remote_image_hrefs = used_names.__remote_image_hrefs
+    local function remote_url(src)
+        local url = tostring(src or "")
+        if url:match("^//") then
+            url = "https:" .. url
+        end
+        if url:match("^https?://") then
+            return url
+        end
+    end
     local img_total = 0
     xhtml:gsub('src=(["\'])(.-)%1', function(_, src)
-        if src:match("^https?://") then
+        if remote_url(src) then
             img_total = img_total + 1
         end
     end)
@@ -705,16 +716,17 @@ function Content.download_remote_images(client, xhtml, used_names, progress)
     end
     local index = 0
     local body = xhtml:gsub('src=(["\'])(.-)%1', function(quote, src)
-        if not src:match("^https?://") then
+        local url = remote_url(src)
+        if not url then
             return "src=" .. quote .. src .. quote
         end
         index = index + 1
         if progress then
             progress(index, img_total)
         end
-        local url = src
-        if url:match("^//") then
-            url = "https:" .. url
+        local cached_href = remote_image_hrefs[url]
+        if cached_href then
+            return "src=" .. quote .. "../" .. cached_href .. quote
         end
         local ok, data = pcall(function()
             return client:get_binary(url, { referer = "https://weread.qq.com/" })
@@ -723,8 +735,13 @@ function Content.download_remote_images(client, xhtml, used_names, progress)
             return "src=" .. quote .. src .. quote
         end
         local ext, mt = media_type_for(data)
-        local fname = unique_asset_name(used_names, "img" .. tostring(index), ext)
+        if not mt:match("^image/") then
+            return "src=" .. quote .. src .. quote
+        end
+        local seed = basename((url:match("^[^%?#]+") or url))
+        local fname = unique_asset_name(used_names, seed ~= "" and seed or ("img" .. tostring(index)), ext)
         local href = "images/" .. fname
+        remote_image_hrefs[url] = href
         table.insert(assets, {
             href = href,
             media_type = mt,
@@ -1049,6 +1066,80 @@ local function normalize_void_elements(html)
     return html
 end
 
+local function strip_mp_reader_font_styles(html)
+    local blocked = {
+        ["font"] = true,
+        ["font-size"] = true,
+        ["font-family"] = true,
+        ["line-height"] = true,
+        ["color"] = true,
+        ["-webkit-text-fill-color"] = true,
+        ["opacity"] = true,
+        ["text-size-adjust"] = true,
+        ["-webkit-text-size-adjust"] = true,
+    }
+
+    return tostring(html or ""):gsub('style=(["\'])(.-)%1', function(quote, style)
+        local kept = {}
+        for decl in style:gmatch("[^;]+") do
+            local name, value = decl:match("^%s*([^:]+)%s*:%s*(.-)%s*$")
+            if name and value and not blocked[name:lower()] then
+                table.insert(kept, name .. ": " .. value)
+            end
+        end
+        if #kept == 0 then
+            return ""
+        end
+        return "style=" .. quote .. table.concat(kept, "; ") .. quote
+    end)
+end
+
+local function is_blank_mp_fragment(fragment)
+    fragment = tostring(fragment or "")
+    if fragment:match("<%s*[iI][mM][gG][%s>/]") then
+        return false
+    end
+    fragment = fragment:gsub("<[bB][rR]%s*/?%s*>", "")
+    fragment = fragment:gsub("<[^>]->", "")
+    fragment = fragment:gsub("&nbsp;", "")
+    fragment = fragment:gsub("&#160;", "")
+    fragment = fragment:gsub("&#x[aA]0;", "")
+    fragment = fragment:gsub("%s+", "")
+    return fragment == ""
+end
+
+local function strip_blank_mp_blocks(html)
+    html = tostring(html or "")
+    html = html:gsub("<[bB][rR]%s*/?%s*>", "<br/>")
+
+    for _ = 1, 4 do
+        local changed = false
+        for _, tag in ipairs({ "p", "section", "div" }) do
+            local pattern = "<" .. tag .. "[^>]->(.-)</" .. tag .. ">"
+            html = html:gsub(pattern, function(inner)
+                if is_blank_mp_fragment(inner) then
+                    changed = true
+                    return ""
+                end
+                return nil
+            end)
+        end
+        if not changed then
+            break
+        end
+    end
+
+    for _ = 1, 4 do
+        local updated = html:gsub("(%s*<br/>%s*)%s*<br/>%s*", "<br/>")
+        if updated == html then
+            break
+        end
+        html = updated
+    end
+    html = html:gsub("\n%s*\n%s*\n+", "\n\n")
+    return html
+end
+
 function Content.download_mp_images(client, body_html, progress, embed_base64)
     local assets = {}
     local used_names = {}
@@ -1123,6 +1214,8 @@ function Content.save_mp_article_html(settings, book, article, body_html)
     os.execute("mkdir -p " .. string.format("%q", dir))
     local title = article.title or "Article"
     local path = Content.mp_article_path(settings, book, article)
+    body_html = strip_mp_reader_font_styles(body_html)
+    body_html = strip_blank_mp_blocks(body_html)
 
     local html = [[<!DOCTYPE html>
 <html lang="zh-CN">
@@ -1130,10 +1223,39 @@ function Content.save_mp_article_html(settings, book, article, body_html)
 <meta charset="utf-8"/>
 <title>]] .. xml_escape(title) .. [[</title>
 <style>
-body { line-height: 1.8; margin: 5%; }
-img { max-width: 100%; height: auto; }
-h1 { margin-bottom: 1em; }
-p { margin: 0.6em 0; }
+html, body {
+  color: #000 !important;
+  font-size: 1em !important;
+  line-height: 1.7;
+  margin: 0;
+  padding: 0;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  margin: 5%;
+}
+body * {
+  color: inherit !important;
+  font-size: inherit !important;
+  font-family: inherit !important;
+  line-height: inherit !important;
+}
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.8em auto;
+}
+h1 {
+  font-size: 1.35em !important;
+  line-height: 1.35 !important;
+  margin: 0 0 1em;
+}
+p {
+  margin-top: 0.55em;
+  margin-bottom: 0.55em;
+}
 </style>
 </head>
 <body>
