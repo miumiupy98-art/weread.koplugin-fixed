@@ -1,36 +1,35 @@
-# WeRead KOReader Plugin - Modified Fork
+# WeRead KOReader Plugin - 修改版 Fork
 
-> This is an unofficial modified fork of the original WeRead KOReader plugin.  
-> Original repository: <https://github.com/QiuYukang/weread.koplugin>  
-> Original author: <QiuYukang>
+> 本仓库是基于原 WeRead KOReader 插件制作的非官方修改版 Fork。  
+> 原项目地址：<原项目链接>  
+> 原作者：<原作者 GitHub ID>
 
-This fork includes personal modifications for highlight/comment display and redownloading books with comments.
+本项目不是原插件的官方版本。  
+原项目版权与许可证归原作者所有，本仓库保留原项目的许可证和署名信息。
 
-## Changes in this fork
+## 本修改版的主要变化
 
-### Added
+本 Fork 在原项目基础上进行了部分 bug 修复、功能增强和行为调整，主要包括：
 
-- Added highlight/thought display support.
-- Added a reminder for clean book versions.
+### 新增功能
 
-### Changed
+- 增加“显示划线和想法”的相关功能。
+- 当当前书籍为 clean 版本时，增加提示，引导用户重新下载带划线/想法的版本。
+- 增加重新下载带评论版本书籍的操作入口。
 
-- Modified the comment/highlight update behavior to redownload the commented version.
-- Simplified the plugin menu.
+### 修复与调整
 
-### Fixed
+- 修复部分情况下封面或书籍信息处理异常的问题。
+- 修复部分菜单逻辑与实际功能不一致的问题。
+- 调整“更新当前书划线/评论”的逻辑，使其更符合当前使用需求。
+- 移除部分不再需要或与现有功能重复的实验性功能。
 
-- Fixed plugin loading/display issues.
-- Fixed several minor bugs found during testing.
+## 注意事项
 
-### Notes
+- 本项目不会包含任何用户账号、cookie、token 或私人配置。
+- 使用者需要自行配置自己的账号信息。
+- 本仓库仅作为个人修改版维护，不代表原项目官方立场。
 
-This is an unofficial modified fork of the original project.
-
-## Notice
-
-This project is not an official version of the original plugin.  
-The original copyright and license belong to the original author.
 # WeRead KOReader Plugin
 
 > **免责声明**：本项目仅供个人学习和技术研究使用，不得用于商业用途。使用本项目所产生的一切后果（包括但不限于账号封禁、数据丢失等）由使用者自行承担，项目作者概不负责。请遵守微信读书的用户协议和相关法律法规。
