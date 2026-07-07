@@ -1,30 +1,28 @@
-## Changelog
+# 更新记录
 
-## Modified fork
+## Modified Fork
 
-This repository is an unofficial modified fork of the original WeRead KOReader plugin.
+本版本为基于原 WeRead KOReader 插件的非官方修改版。
 
-### Added
+### 新增
 
-- Added an option to display highlights and thoughts.
-- Added a reminder when the current book is a clean version.
+- 增加显示划线和想法的功能。
+- 增加 clean 版本书籍的提示逻辑。
+- 增加重新下载带评论版本书籍的相关操作入口。
 
-### Changed
+### 修复
 
-- Changed the comment/highlight update behavior to redownload the commented version of the book.
-- Simplified the menu by removing features that are not needed in this fork.
+- 修复部分情况下书籍信息或封面处理异常的问题。
+- 修复部分菜单逻辑与实际功能不一致的问题。
+- 修复部分操作显示与实际行为不一致的问题。
 
-### Fixed
+### 调整
 
-- Fixed plugin loading/display issues after modification.
-- Fixed issues related to book cover image handling.
-- Fixed minor compatibility problems found during testing.
+- 将原有“更新当前书划线/评论”的逻辑调整为重新下载带评论版本。
+- 移除部分不必要或与现有功能重复的功能。
+- 调整菜单文字，使功能含义更明确。
 
-### Removed
+### 说明
 
-- Removed unnecessary experimental or duplicate features.
-
-### Notes
-
-This fork is based on the original project.  
-The original copyright and license belong to the original author.
+本项目是非官方修改版 Fork。  
+原项目版权和许可证归原作者所有。
