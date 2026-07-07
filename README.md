@@ -1,3 +1,36 @@
+# WeRead KOReader Plugin - Modified Fork
+
+> This is an unofficial modified fork of the original WeRead KOReader plugin.  
+> Original repository: <https://github.com/QiuYukang/weread.koplugin>  
+> Original author: <QiuYukang>
+
+This fork includes personal modifications for highlight/comment display and redownloading books with comments.
+
+## Changes in this fork
+
+### Added
+
+- Added highlight/thought display support.
+- Added a reminder for clean book versions.
+
+### Changed
+
+- Modified the comment/highlight update behavior to redownload the commented version.
+- Simplified the plugin menu.
+
+### Fixed
+
+- Fixed plugin loading/display issues.
+- Fixed several minor bugs found during testing.
+
+### Notes
+
+This is an unofficial modified fork of the original project.
+
+## Notice
+
+This project is not an official version of the original plugin.  
+The original copyright and license belong to the original author.
 # WeRead KOReader Plugin
 
 > **免责声明**：本项目仅供个人学习和技术研究使用，不得用于商业用途。使用本项目所产生的一切后果（包括但不限于账号封禁、数据丢失等）由使用者自行承担，项目作者概不负责。请遵守微信读书的用户协议和相关法律法规。
