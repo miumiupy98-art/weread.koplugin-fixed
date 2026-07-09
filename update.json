@@ -1,8 +1,8 @@
 {
   "version": "0.2.5",
-  "name": "WeRead KOReader Plugin Modified Version v0.2.5 Cleanup Test",
-  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.2.5-test-cleanup/weread-koreader-plugin-mod-v0.2.5-test-cleanup-ota.zip",
-  "sha256": "4a6ebb3c670221b65bcc42299b0b95e5cded70a655e8907878d810798484c90a",
-  "notes": "OTA cleanup test. Backups are moved outside the plugins directory, and the pending backup is deleted after the updated plugin successfully starts. User config.lua is preserved and config.example.lua is skipped.",
+  "name": "WeRead KOReader Plugin Modified Version v0.2.5 Version Fix Test",
+  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.2.5-test-versionfix/weread-koreader-plugin-mod-v0.2.5-test-versionfix-ota.zip",
+  "sha256": "180c95793754c9943962708db47e777c1f2802687be5ef14212d2257e31f5d29",
+  "notes": "OTA version display test. Uses a hard PLUGIN_VERSION constant for the About menu, logs, and update comparison, and keeps the cleanup backup logic outside the plugins directory.",
   "delete_list": []
 }
