@@ -1,7 +1,8 @@
 {
-  "version": "0.2.2",
-  "name": "WeRead KOReader Plugin Modified Version v0.2.2",
-  "package_url": "https://github.com/miumiupy98/weread.koplugin/releases/download/v0.2.2-mod/weread-koreader-plugin-mod-v0.2.2-ota.zip",
-  "sha256": "85f5d2cb6e28dd94faf1d53d3a3e481a5d18dfd7812e1df0b39daf811b479172",
-  "notes": "Initial OTA-enabled modified release. Reworked WeRead thoughts to use a custom popup instead of inserting comments into EPUB text; OTA updates preserve user config.lua and skip config.example.lua."
+  "version": "0.2.4",
+  "name": "WeRead KOReader Plugin Modified Version v0.2.4 Test",
+  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.2.4-test/weread-koreader-plugin-mod-v0.2.4-test-ota.zip",
+  "sha256": "dc68a23acf3e2abc7467480a05b4884cfea7e321254945d015080edab7951283",
+  "notes": "OTA test update. This test package only updates the plugin version/About page to v0.2.4 and keeps the same OTA manifest URL. User config.lua is preserved and config.example.lua is skipped.",
+  "delete_list": []
 }
