@@ -92,7 +92,7 @@ end
 local WeReadPlugin = WidgetContainer:extend{
     name = "weread",
     is_doc_only = false,
-    version = "0.2.1",
+    version = "0.2.2",
 }
 
 local function plugin_dir()
@@ -291,17 +291,18 @@ function WeReadPlugin:getMainMenuItems()
         {
             text = _("检查更新"),
             callback = self:safeCallback(_("检查更新"), function()
-                self:showInfo(_("OTA 更新入口已添加。\n\n当前版本暂不执行自动下载。\n下一步可以接入 GitHub Releases 或 manifest.json。"))
+                self:checkUpdateWithUI()
             end),
         },
         {
-            text = T(_("About (v%1)"), self.version),
+            text = T(_("关于 WeRead 修改版 (v%1)"), self.version),
             callback = function()
                 UIManager:show(InfoMessage:new{
-                    text = T(_("WeRead Plugin v%1\n\nDisclaimer: This project is for personal learning and technical research only, not for commercial use. All consequences arising from the use of this project (including but not limited to account bans, data loss, etc.) are borne by the user. The project author assumes no responsibility. Please comply with WeRead's user agreement and applicable laws and regulations.\n\nhttps://github.com/qiuyukang/weread.koplugin"), self.version),
+                    text = T(_("WeRead KOReader 插件修改版 v%1\n\n基于原版 weread.koplugin 修改。\n\n主要变化：\n• 调整划线/想法下载入口\n• 微信读书想法改为自定义弹窗显示\n• 评论不再写入 EPUB 正文，避免进入正文分页\n• 支持显示/隐藏划线和想法\n• 增加手动 OTA 检查更新入口\n\n说明：\n这是非官方修改版，仅供个人学习和技术研究使用。\n请遵守微信读书用户协议及相关法律法规。\n\nOriginal project:\nhttps://github.com/qiuyukang/weread.koplugin"), self.version),
                 })
             end,
         },
+
     }
 
     if self.ui.document then
@@ -3065,6 +3066,17 @@ function WeReadPlugin:doReadReport()
     if not ok then
         self:setReadReportError(result)
     end
+end
+
+function WeReadPlugin:checkUpdateWithUI()
+    local Updater = require("lib.updater")
+    local updater = Updater:new{
+        plugin = self,
+        current_version = self.version,
+        plugin_dir = self.plugin_dir,
+        manifest_url = "https://raw.githubusercontent.com/miumiupy98/weread.koplugin/main/update.json",
+    }
+    updater:checkWithUI()
 end
 
 function WeReadPlugin:onFlushSettings()
