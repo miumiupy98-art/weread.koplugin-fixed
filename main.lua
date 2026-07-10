@@ -91,7 +91,7 @@ local function merge_cookie_tables(current, updates)
     return current
 end
 
-local PLUGIN_VERSION = "0.3.0"
+local PLUGIN_VERSION = "0.3.1"
 
 local WeReadPlugin = WidgetContainer:extend{
     name = "weread",
@@ -1437,16 +1437,24 @@ function WeReadPlugin:showAccountStatus()
     ))
 end
 
+function WeReadPlugin:removeLocalCredentialFiles()
+    local base = (self.plugin_dir or plugin_dir()) .. "/config.lua"
+    for _, path in ipairs({ base, base .. ".old", base .. ".new", base .. ".bak" }) do
+        pcall(os.remove, path)
+    end
+end
+
 function WeReadPlugin:confirmClearAccount()
     UIManager:show(ConfirmBox:new{
-        text = _("Clear WeRead cookie and API key? Cached books will remain."),
+        text = _("Clear WeRead cookie, API key, account metadata, settings backups, and local config.lua credentials? Cached books will remain."),
         ok_text = _("Clear"),
         ok_callback = self:safeCallback(_("Clear"), function()
             self._qr_login_generation = (self._qr_login_generation or 0) + 1
             self:_closeQRLoginDialog(true)
             self.client:cancel_qr_login()
+            self:removeLocalCredentialFiles()
             self.settings:reset_account()
-            self:showInfo(_("WeRead account data cleared."))
+            self:showInfo(_("WeRead account data and local credential files cleared."))
         end),
     })
 end

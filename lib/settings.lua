@@ -152,14 +152,29 @@ function Settings:set_download_dir(path)
     return self.cache_dir
 end
 
+local function remove_file(path)
+    if type(path) == "string" and path ~= "" then
+        pcall(os.remove, path)
+    end
+end
+
 function Settings:reset_account()
+    -- Clear every persisted authentication field first. LuaSettings:flush() may
+    -- rotate the previous settings file into a backup, so remove backups only
+    -- after the blank state has been written.
     self:set("api_key", "")
     self:set("cookies", {})
     self:set("wr_ticket", "")
     self:set("wr_wrpa", "")
     self:set("curl_payload", {})
     self:set("account", deepcopy(defaults.account))
+    self:set("config_auth_fingerprint", "")
     self:flush()
+
+    -- KOReader versions may use .old and/or .new during safe writes/recovery.
+    -- Neither file should retain credentials after an explicit account reset.
+    remove_file(self.settings_file .. ".old")
+    remove_file(self.settings_file .. ".new")
 end
 
 function Settings:is_cookie_configured()

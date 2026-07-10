@@ -1,6 +1,0 @@
-config.lua
-*.cookies
-cache/
-*.epub
-.DS_Store
-/.idea/

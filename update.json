@@ -1,8 +1,0 @@
-{
-  "version": "0.3.0",
-  "name": "WeRead KOReader Plugin Modified Version v0.3.0",
-  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.3.0/weread-koreader-plugin-mod-v0.3.0-ota.zip",
-  "sha256": "fcd38a0359dababc467f94cecc705a02bce60fd051906875116f2cd2cdb04c93",
-  "notes": "正式版 v0.3.0：新增插件内微信读书扫码登录，扫码确认后自动保存登录凭证与 API Key；统一主程序、插件信息和 OTA 版本号；优化 OTA 临时目录、备份与启动后清理逻辑。",
-  "delete_list": []
-}
