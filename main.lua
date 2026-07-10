@@ -91,7 +91,7 @@ local function merge_cookie_tables(current, updates)
     return current
 end
 
-local PLUGIN_VERSION = "0.3.1"
+local PLUGIN_VERSION = "0.3.2"
 
 local WeReadPlugin = WidgetContainer:extend{
     name = "weread",
