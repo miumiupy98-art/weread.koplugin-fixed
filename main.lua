@@ -89,10 +89,12 @@ local function merge_cookie_tables(current, updates)
     return current
 end
 
+local PLUGIN_VERSION = "0.2.5"
+
 local WeReadPlugin = WidgetContainer:extend{
     name = "weread",
     is_doc_only = false,
-    version = "0.2.2",
+    version = PLUGIN_VERSION,
 }
 
 local function plugin_dir()
@@ -101,7 +103,104 @@ local function plugin_dir()
     return path:match("^(.*)/[^/]+$") or "."
 end
 
+
+
+local function ota_shell_quote(value)
+    value = tostring(value or "")
+    return "'" .. value:gsub("'", "'\\''") .. "'"
+end
+
+local function ota_run_cmd(cmd)
+    logger.info(LOG_MODULE, "ota cleanup run:", cmd)
+    local a, _b, c = os.execute(cmd)
+    return a == true or a == 0 or c == 0
+end
+
+local function ota_dirname(path)
+    return tostring(path or ""):match("^(.*)/[^/]+/?$") or "."
+end
+
+local function ota_read_file(path)
+    local f = io.open(path, "rb")
+    if not f then
+        return nil
+    end
+    local data = f:read("*a")
+    f:close()
+    return data
+end
+
+local function ota_file_exists(path)
+    local f = io.open(path, "rb")
+    if f then
+        f:close()
+        return true
+    end
+    return false
+end
+
+function WeReadPlugin:_otaPaths()
+    local pdir = self.plugin_dir or plugin_dir()
+    local parent_dir = ota_dirname(pdir)
+    local koreader_dir = ota_dirname(parent_dir)
+    local ota_root = koreader_dir .. "/weread/ota"
+    return {
+        parent_dir = parent_dir,
+        ota_root = ota_root,
+        backup_root = ota_root .. "/backups",
+        pending_file = ota_root .. "/pending_cleanup.txt",
+    }
+end
+
+function WeReadPlugin:_cleanupLegacyPluginBackups(parent_dir)
+    -- Old updater versions created folders such as plugins/weread.koplugin.bak-20260709-171935.
+    -- They are not real plugins and should not stay in the plugin search directory.
+    if not parent_dir or parent_dir == "" then
+        return
+    end
+    ota_run_cmd("find " .. ota_shell_quote(parent_dir) .. " -maxdepth 1 -type d -name 'weread.koplugin.bak-*' -exec rm -rf {} \\;")
+end
+
+function WeReadPlugin:_cleanupPendingOtaBackup()
+    local paths = self:_otaPaths()
+    self:_cleanupLegacyPluginBackups(paths.parent_dir)
+
+    local pending = ota_read_file(paths.pending_file)
+    if not pending or pending == "" then
+        return
+    end
+
+    local backup_dir = pending:match("backup_dir=([^\r\n]+)")
+    if backup_dir and backup_dir:sub(1, #paths.backup_root) == paths.backup_root and not backup_dir:find("..", 1, true) then
+        ota_run_cmd("rm -rf " .. ota_shell_quote(backup_dir))
+    else
+        logger.warn(LOG_MODULE, "skip unsafe OTA backup cleanup path:", tostring(backup_dir))
+    end
+
+    -- Also remove old backup folders that were already moved to the backup root by previous updater runs.
+    -- This is only done after the new plugin has successfully started.
+    if ota_file_exists(paths.backup_root) then
+        ota_run_cmd("find " .. ota_shell_quote(paths.backup_root) .. " -maxdepth 1 -type d -name 'weread-backup-*' -exec rm -rf {} \\;")
+        ota_run_cmd("find " .. ota_shell_quote(paths.backup_root) .. " -maxdepth 1 -type d -name 'weread.koplugin.bak-*' -exec rm -rf {} \\;")
+    end
+
+    ota_run_cmd("rm -f " .. ota_shell_quote(paths.pending_file))
+    logger.info(LOG_MODULE, "OTA backup cleanup completed")
+end
+
+function WeReadPlugin:scheduleOtaBackupCleanup()
+    UIManager:scheduleIn(3, function()
+        local ok, err = pcall(function()
+            self:_cleanupPendingOtaBackup()
+        end)
+        if not ok then
+            logger.warn(LOG_MODULE, "OTA backup cleanup failed:", log_error(err))
+        end
+    end)
+end
+
 function WeReadPlugin:init()
+    self.version = PLUGIN_VERSION
     math.randomseed(os.time())
     self.plugin_dir = plugin_dir()
     self.settings = Settings:new()
@@ -114,7 +213,8 @@ function WeReadPlugin:init()
         self:startReadReport(true)
     end
     self._reader_session_gen = 0
-    logger.info(LOG_MODULE, "initialized:", "version=", self.version)
+    self:scheduleOtaBackupCleanup()
+    logger.info(LOG_MODULE, "initialized:", "version=", PLUGIN_VERSION)
 end
 
 function WeReadPlugin:loadConfigFile(source)
@@ -295,10 +395,10 @@ function WeReadPlugin:getMainMenuItems()
             end),
         },
         {
-            text = T(_("关于 WeRead 修改版 (v%1)"), self.version),
+            text = T(_("关于微信阅读修改版 (v%1)"), PLUGIN_VERSION),
             callback = function()
                 UIManager:show(InfoMessage:new{
-                    text = T(_("WeRead KOReader 插件修改版 v%1\n\n基于原版 weread.koplugin 修改。\n\n主要变化：\n• 调整划线/想法下载入口\n• 微信读书想法改为自定义弹窗显示\n• 评论不再写入 EPUB 正文，避免进入正文分页\n• 支持显示/隐藏划线和想法\n• 增加手动 OTA 检查更新入口\n\n说明：\n这是非官方修改版，仅供个人学习和技术研究使用。\n请遵守微信读书用户协议及相关法律法规。\n\nOriginal project:\nhttps://github.com/qiuyukang/weread.koplugin"), self.version),
+                    text = T(_("微信阅读 KOReader 插件修改版 v%1\n\n基于原版 weread.koplugin 修改。\n\n主要变化：\n• 调整划线/想法下载入口\n• 微信读书想法改为自定义弹窗显示\n• 评论不再写入 EPUB 正文，避免进入正文分页\n• 支持显示/隐藏划线和想法\n• 增加手动 OTA 检查更新入口\n\n说明：\n这是非官方修改版，仅供个人学习和技术研究使用。\n请遵守微信读书用户协议及相关法律法规。\n\nOriginal project:\nhttps://github.com/qiuyukang/weread.koplugin"), PLUGIN_VERSION),
                 })
             end,
         },
@@ -3072,9 +3172,9 @@ function WeReadPlugin:checkUpdateWithUI()
     local Updater = require("lib.updater")
     local updater = Updater:new{
         plugin = self,
-        current_version = self.version,
+        current_version = PLUGIN_VERSION,
         plugin_dir = self.plugin_dir,
-        manifest_url = "https://raw.githubusercontent.com/miumiupy98/weread.koplugin/main/update.json",
+        manifest_url = "https://raw.githubusercontent.com/miumiupy98-art/weread.koplugin-fixed/main/update.json",
     }
     updater:checkWithUI()
 end

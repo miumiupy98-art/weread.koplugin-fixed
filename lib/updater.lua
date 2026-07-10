@@ -238,14 +238,24 @@ function Updater:install(manifest)
     local parent_dir = dirname(plugin_dir)
     local plugin_name = basename(plugin_dir)
     local stamp = os.date("%Y%m%d-%H%M%S")
-    local tmp_dir = parent_dir .. "/." .. plugin_name .. ".update-" .. stamp
+
+    -- Keep OTA temporary files and backups OUTSIDE the plugins directory.
+    -- Directories whose names contain/extend .koplugin inside koreader/plugins
+    -- may be mistaken for plugins by KOReader or by user file operations.
+    local koreader_dir = dirname(parent_dir)
+    local ota_root = koreader_dir .. "/weread/ota"
+    local tmp_root = ota_root .. "/tmp"
+    local backup_root = ota_root .. "/backups"
+    local tmp_dir = tmp_root .. "/update-" .. stamp
     local unpack_dir = tmp_dir .. "/unpacked"
     local zip_path = tmp_dir .. "/update.zip"
-    local backup_dir = plugin_dir .. ".bak-" .. stamp
+    local backup_dir = backup_root .. "/weread-backup-" .. stamp
     local keep_config = tmp_dir .. "/config.lua.keep"
+    local pending_file = ota_root .. "/pending_cleanup.txt"
 
     assert(run_cmd("rm -rf " .. shell_quote(tmp_dir)), "cannot clean temp directory")
     assert(run_cmd("mkdir -p " .. shell_quote(unpack_dir)), "cannot create temp directory")
+    assert(run_cmd("mkdir -p " .. shell_quote(backup_root)), "cannot create backup directory")
 
     local zip_data = self:download(manifest.package_url)
     if type(zip_data) ~= "string" or zip_data == "" then
@@ -266,14 +276,17 @@ function Updater:install(manifest)
     assert(run_cmd("unzip -q " .. shell_quote(zip_path) .. " -d " .. shell_quote(unpack_dir)), "unzip failed")
 
     local src_dir
-    if file_exists(unpack_dir .. "/" .. plugin_name .. "/main.lua") then
+    if file_exists(unpack_dir .. "/" .. plugin_name .. "/main.lua")
+            or run_cmd("test -d " .. shell_quote(unpack_dir .. "/" .. plugin_name)) then
         src_dir = unpack_dir .. "/" .. plugin_name
-    elseif file_exists(unpack_dir .. "/weread.koplugin/main.lua") then
+    elseif file_exists(unpack_dir .. "/weread.koplugin/main.lua")
+            or run_cmd("test -d " .. shell_quote(unpack_dir .. "/weread.koplugin")) then
         src_dir = unpack_dir .. "/weread.koplugin"
-    elseif file_exists(unpack_dir .. "/main.lua") then
+    elseif file_exists(unpack_dir .. "/main.lua")
+            or run_cmd("find " .. shell_quote(unpack_dir) .. " -type f | grep -q .") then
         src_dir = unpack_dir
     else
-        error("update package does not contain main.lua")
+        error("update package is empty or has unsupported layout")
     end
 
     -- config.lua contains user-specific credentials and local preferences.
@@ -300,11 +313,37 @@ function Updater:install(manifest)
         assert(run_cmd("cp -f " .. shell_quote(keep_config) .. " " .. shell_quote(plugin_dir .. "/config.lua")), "cannot restore config.lua")
     end
 
+    -- Optional explicit deletion. Never delete files merely because they are absent
+    -- from the update zip. Only delete safe relative paths listed by the manifest.
+    if type(manifest.delete_list) == "table" then
+        for _, rel in ipairs(manifest.delete_list) do
+            rel = tostring(rel or "")
+            local unsafe = rel == "" or rel:match("^/") or rel:match("%.%.")
+                or rel == "config.lua" or rel == "config.example.lua"
+                or rel:match("^cache/") or rel:match("^thoughts/")
+            if unsafe then
+                logger.warn(LOG_MODULE, "skip unsafe delete_list path:", rel)
+            else
+                run_cmd("rm -rf " .. shell_quote(plugin_dir .. "/" .. rel))
+            end
+        end
+    end
+
     local installed_main = read_file(plugin_dir .. "/main.lua") or ""
     local wanted = tostring(manifest.version):gsub("([%.%-%+%*%?%[%]%^%$%(%)%%])", "%%%1")
     if not installed_main:find("version%s*=%s*['\"]" .. wanted .. "['\"]") then
         logger.warn(LOG_MODULE, "installed main.lua version may not match manifest:", manifest.version)
     end
+
+    -- Move legacy backup folders that older updater versions created inside plugins/.
+    -- They must not remain in the plugin search directory.
+    run_cmd("find " .. shell_quote(parent_dir) .. " -maxdepth 1 -type d -name 'weread.koplugin.bak-*' -exec mv {} " .. shell_quote(backup_root) .. "/ \\;")
+
+
+    -- Do not delete the backup immediately. Copy success does not guarantee that
+    -- the new plugin can be loaded. Instead, write a pending marker. The next
+    -- successful plugin startup will remove the backup and clear the marker.
+    assert(write_file(pending_file, "backup_dir=" .. backup_dir .. "\nversion=" .. tostring(manifest.version) .. "\n"), "cannot write pending cleanup marker")
 
     run_cmd("rm -rf " .. shell_quote(tmp_dir))
     logger.info(LOG_MODULE, "update installed:", "version=", manifest.version, "backup=", backup_dir)
