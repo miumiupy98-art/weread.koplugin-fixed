@@ -1,0 +1,8 @@
+{
+  "version": "0.3.2",
+  "name": "WeRead KOReader Plugin Mod v0.3.2",
+  "notes": "紧急修复 v0.3.1 遗漏 lib/weread.lua 导致插件不显示的问题；恢复完整运行文件，并保留账号数据清理修复。",
+  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.3.2/weread-koreader-plugin-mod-v0.3.2-ota-safe.zip",
+  "sha256": "19d8d91eb195eb2684b7dbabcd1b2e0b9fdf88a9f791fa079fc5c27b3775df6d",
+  "delete_list": []
+}
