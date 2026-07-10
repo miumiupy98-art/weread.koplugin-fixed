@@ -1,8 +1,0 @@
-{
-  "version": "0.3.1",
-  "name": "WeRead KOReader Plugin Mod v0.3.1",
-  "notes": "修复清除账号后从设置备份或本地 config.lua 恢复登录的问题；发布包不包含任何用户凭证。",
-  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.3.1/weread-koreader-plugin-mod-v0.3.1-ota-safe.zip",
-  "sha256": "a4428499c63681c519f4d25b25919ed9eaea8c9d123d1225e27e6d4b02f82250",
-  "delete_list": []
-}
