@@ -1,8 +1,8 @@
 {
-  "version": "0.2.5",
-  "name": "WeRead KOReader Plugin Modified Version v0.2.5 Version Fix Test",
-  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.2.5-test-versionfix/weread-koreader-plugin-mod-v0.2.5-test-versionfix-ota.zip",
-  "sha256": "180c95793754c9943962708db47e777c1f2802687be5ef14212d2257e31f5d29",
-  "notes": "OTA version display test. Uses a hard PLUGIN_VERSION constant for the About menu, logs, and update comparison, and keeps the cleanup backup logic outside the plugins directory.",
+  "version": "0.3.0",
+  "name": "WeRead KOReader Plugin Modified Version v0.3.0",
+  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.3.0/weread-koreader-plugin-mod-v0.3.0-ota.zip",
+  "sha256": "fcd38a0359dababc467f94cecc705a02bce60fd051906875116f2cd2cdb04c93",
+  "notes": "正式版 v0.3.0：新增插件内微信读书扫码登录，扫码确认后自动保存登录凭证与 API Key；统一主程序、插件信息和 OTA 版本号；优化 OTA 临时目录、备份与启动后清理逻辑。",
   "delete_list": []
 }
