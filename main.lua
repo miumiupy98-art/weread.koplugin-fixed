@@ -1,5 +1,6 @@
 local BD = require("ui/bidi")
 local ConfirmBox = require("ui/widget/confirmbox")
+local Device = require("device")
 local Dispatcher = require("dispatcher")
 local DownloadDialog = require("lib.download_dialog")
 local Event = require("ui/event")
@@ -9,6 +10,7 @@ local InputDialog = require("ui/widget/inputdialog")
 local logger = require("logger")
 local Menu = require("ui/widget/menu")
 local PathChooser = require("ui/widget/pathchooser")
+local QRMessage = require("ui/widget/qrmessage")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local T = require("ffi/util").template
@@ -586,9 +588,21 @@ function WeReadPlugin:getSettingsMenuItems()
             sub_item_table_func = function()
                 return {
                     {
+                        text = _("Scan QR code to log in"),
+                        callback = self:safeCallback(_("QR login"), function()
+                            self:startQRLogin()
+                        end),
+                    },
+                    {
                         text = _("Account status"),
                         callback = self:safeCallback(_("Account status"), function()
                             self:showAccountStatus()
+                        end),
+                    },
+                    {
+                        text = _("Manual cookie/cURL import"),
+                        callback = self:safeCallback(_("Manual cookie/cURL import"), function()
+                            self:showImportCookieDialog()
                         end),
                     },
                     {
@@ -1177,10 +1191,250 @@ function WeReadPlugin:renewCookieWithUI()
     end)
 end
 
+function WeReadPlugin:_closeQRLoginDialog(programmatic)
+    local dialog = self._qr_login_dialog
+    if not dialog then
+        return
+    end
+    self._qr_login_dialog = nil
+    self._qr_login_programmatic_close = programmatic == true
+    UIManager:close(dialog)
+    self._qr_login_programmatic_close = false
+end
+
+function WeReadPlugin:startQRLogin()
+    if not self:isNetworkOnline() then
+        self:showOffline(_("QR login"))
+        return
+    end
+
+    self._qr_login_generation = (self._qr_login_generation or 0) + 1
+    local generation = self._qr_login_generation
+    self.client:cancel_qr_login()
+    self:_closeQRLoginDialog(true)
+    self:showBusy(_("Getting login QR code..."))
+
+    self:runOnlineTask(_("QR login"), function()
+        local ok, uid_or_err = pcall(function()
+            return self.client:begin_qr_login()
+        end)
+        self:closeBusy()
+        if generation ~= self._qr_login_generation then
+            return
+        end
+        if not ok then
+            logger.err(LOG_MODULE, "get QR login uid failed:", log_error(uid_or_err))
+            self:showInfo(T(_("QR login failed:\n%1"), display_error(uid_or_err)))
+            return
+        end
+        self:_showQRLoginCode(uid_or_err, generation)
+    end)
+end
+
+function WeReadPlugin:_showQRLoginCode(uid, generation)
+    local qr_url = "https://weread.qq.com/web/confirm?uid=" .. tostring(uid)
+    local dialog
+    dialog = QRMessage:new{
+        text = qr_url,
+        width = Device.screen:getWidth(),
+        height = Device.screen:getHeight(),
+        dismiss_callback = function()
+            if self._qr_login_dialog == dialog then
+                self._qr_login_dialog = nil
+            end
+            if not self._qr_login_programmatic_close
+                and generation == self._qr_login_generation then
+                self._qr_login_generation = self._qr_login_generation + 1
+                self.client:cancel_qr_login()
+                self:showTransientInfo(_("QR login cancelled."), 2)
+            end
+        end,
+    }
+    self._qr_login_dialog = dialog
+    UIManager:show(dialog)
+    self:refreshUI()
+
+    -- Allow one event-loop turn to paint the QR before the synchronous long poll.
+    UIManager:scheduleIn(0.5, function()
+        if generation ~= self._qr_login_generation or self._qr_login_dialog ~= dialog then
+            return
+        end
+        self:_pollQRLogin(uid, generation)
+    end)
+end
+
+function WeReadPlugin:_pollQRLogin(uid, generation, otp)
+    local ok, result = pcall(function()
+        return self.client:poll_qr_login(uid, otp or "")
+    end)
+    if generation ~= self._qr_login_generation then
+        return
+    end
+    if not ok then
+        self:_closeQRLoginDialog(true)
+        self.client:cancel_qr_login()
+        logger.err(LOG_MODULE, "QR login polling failed:", log_error(result))
+        self:showInfo(T(_("QR login failed:\n%1"), display_error(result)))
+        return
+    end
+
+    if result.succeed == true then
+        self:_closeQRLoginDialog(true)
+        self:_completeQRLogin(result, generation)
+        return
+    end
+
+    local logic_code = tostring(result.logicCode or "")
+    if logic_code == "NEED_OTP" then
+        self:_closeQRLoginDialog(true)
+        self:_showQRLoginOTP(uid, generation)
+    elseif logic_code == "LOGIN_TIMEOUT" then
+        self:_closeQRLoginDialog(true)
+        self.client:cancel_qr_login()
+        self:showInfo(_("The QR code has expired. Please try again."))
+    elseif logic_code == "OTP_EXPIRED" then
+        self:_closeQRLoginDialog(true)
+        self.client:cancel_qr_login()
+        self:showInfo(_("The verification code has expired. Please try again."))
+    elseif logic_code == "OTP_NOT_MATCH" then
+        self:_closeQRLoginDialog(true)
+        self:_showQRLoginOTP(uid, generation, _("Incorrect verification code."))
+    else
+        self:_closeQRLoginDialog(true)
+        self.client:cancel_qr_login()
+        self:showInfo(T(_("QR login failed:\n%1"), logic_code ~= "" and logic_code or _("Unknown login response")))
+    end
+end
+
+function WeReadPlugin:_showQRLoginOTP(uid, generation, error_text)
+    local dialog
+    local description = _("Enter the four-digit verification code shown on your phone.")
+    if error_text and error_text ~= "" then
+        description = error_text .. "\n\n" .. description
+    end
+    dialog = InputDialog:new{
+        title = _("Verification code required"),
+        input = "",
+        input_type = "text",
+        description = description,
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    id = "close",
+                    callback = function()
+                        UIManager:close(dialog)
+                        if generation == self._qr_login_generation then
+                            self._qr_login_generation = self._qr_login_generation + 1
+                        end
+                        self.client:cancel_qr_login()
+                    end,
+                },
+                {
+                    text = _("Verify"),
+                    is_enter_default = true,
+                    callback = function()
+                        local otp = tostring(dialog:getInputText() or "")
+                            :gsub("^%s+", ""):gsub("%s+$", "")
+                        if not otp:match("^%d%d%d%d$") then
+                            self:showInfo(_("The verification code must contain four digits."))
+                            return
+                        end
+                        UIManager:close(dialog)
+                        self:showBusy(_("Verifying login..."))
+                        self:runOnlineTask(_("QR login"), function()
+                            local ok, result = pcall(function()
+                                return self.client:poll_qr_login(uid, otp)
+                            end)
+                            self:closeBusy()
+                            if generation ~= self._qr_login_generation then
+                                return
+                            end
+                            if not ok then
+                                logger.err(LOG_MODULE, "QR OTP verification failed:", log_error(result))
+                                self.client:cancel_qr_login()
+                                self:showInfo(T(_("QR login failed:\n%1"), display_error(result)))
+                                return
+                            end
+                            if result.succeed == true then
+                                self:_completeQRLogin(result, generation)
+                                return
+                            end
+                            local code = tostring(result.logicCode or "")
+                            if code == "OTP_NOT_MATCH" or code == "NEED_OTP" then
+                                self:_showQRLoginOTP(uid, generation, _("Incorrect verification code."))
+                            elseif code == "OTP_EXPIRED" then
+                                self.client:cancel_qr_login()
+                                self:showInfo(_("The verification code has expired. Please try again."))
+                            else
+                                self.client:cancel_qr_login()
+                                self:showInfo(T(_("QR login failed:\n%1"), code ~= "" and code or _("Unknown login response")))
+                            end
+                        end)
+                    end,
+                },
+            },
+        },
+    }
+    self:showInputDialog(dialog)
+end
+
+function WeReadPlugin:_completeQRLogin(login_result, generation)
+    self:showBusy(_("Completing WeRead login..."))
+    self:runOnlineTask(_("QR login"), function()
+        local ok, account_or_err = pcall(function()
+            return self.client:complete_qr_login(login_result)
+        end)
+        self:closeBusy()
+        if generation ~= self._qr_login_generation then
+            return
+        end
+        if not ok then
+            logger.err(LOG_MODULE, "complete QR login failed:", log_error(account_or_err))
+            self.client:cancel_qr_login()
+            self:showInfo(T(_("QR login failed:\n%1"), display_error(account_or_err)))
+            return
+        end
+
+        local account_name = account_or_err.name
+        if type(account_name) ~= "string" or account_name == "" then
+            account_name = _("Unknown account")
+        end
+        logger.info(LOG_MODULE, "QR login completed")
+        self:showInfo(T(
+            _("WeRead login successful.\n\nAccount: %1\nCookie: %2\nOfficial API key: %3"),
+            account_name,
+            _("configured"),
+            _("configured")
+        ))
+    end)
+end
+
 function WeReadPlugin:showAccountStatus()
     local cookie_status = self.settings:is_cookie_configured() and _("configured") or _("missing")
     local api_status = self.settings:is_api_configured() and _("configured") or _("missing")
-    self:showInfo(T(_("Cookie: %1\nOfficial API key: %2\nCache directory:\n%3"), cookie_status, api_status, BD.dirpath(self.settings.cache_dir)))
+    local account = self.settings:get("account", {})
+    local account_name = type(account.name) == "string" and account.name or ""
+    if account_name == "" then
+        account_name = (self.settings:is_cookie_configured() or self.settings:is_api_configured())
+            and _("Unknown account") or _("Not logged in")
+    end
+    local login_method
+    if account.login_method == "qr" then
+        login_method = _("QR login")
+    elseif self.settings:is_cookie_configured() or self.settings:is_api_configured() then
+        login_method = _("Manual configuration")
+    else
+        login_method = _("Not logged in")
+    end
+    self:showInfo(T(
+        _("Account: %1\nLogin method: %2\nCookie: %3\nOfficial API key: %4\nCache directory:\n%5"),
+        account_name,
+        login_method,
+        cookie_status,
+        api_status,
+        BD.dirpath(self.settings.cache_dir)
+    ))
 end
 
 function WeReadPlugin:confirmClearAccount()
@@ -1188,6 +1442,9 @@ function WeReadPlugin:confirmClearAccount()
         text = _("Clear WeRead cookie and API key? Cached books will remain."),
         ok_text = _("Clear"),
         ok_callback = self:safeCallback(_("Clear"), function()
+            self._qr_login_generation = (self._qr_login_generation or 0) + 1
+            self:_closeQRLoginDialog(true)
+            self.client:cancel_qr_login()
             self.settings:reset_account()
             self:showInfo(_("WeRead account data cleared."))
         end),
