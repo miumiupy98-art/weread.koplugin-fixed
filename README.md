@@ -1,11 +1,11 @@
-# WeRead KOReader Plugin - 修改版 Fork
+# WeRead KOReader Plugin — 非官方修改版
 
-> 本仓库是基于原 WeRead KOReader 插件制作的非官方修改版 Fork。  
-> 原项目地址：<[((https://github.com/QiuYukang/weread.koplugin)>  
-> 原作者：<((https://github.com/QiuYukang#--github))>
+> 本项目基于原 WeRead KOReader 插件制作，为非官方修改版。  
+> 原项目：<https://github.com/QiuYukang/weread.koplugin>  
+> 原作者：<https://github.com/QiuYukang>
 
 本项目不是原插件的官方版本。  
-原项目版权与许可证归原作者所有，本仓库保留原项目的许可证和署名信息。
+原项目及其基础代码的相关权利归原作者所有；本修改版保留原项目来源和作者署名。
 
 ## 本修改版的主要变化
 

@@ -331,7 +331,9 @@ function Updater:install(manifest)
 
     local installed_main = read_file(plugin_dir .. "/main.lua") or ""
     local wanted = tostring(manifest.version):gsub("([%.%-%+%*%?%[%]%^%$%(%)%%])", "%%%1")
-    if not installed_main:find("version%s*=%s*['\"]" .. wanted .. "['\"]") then
+    local direct_version = installed_main:find("version%s*=%s*['\"]" .. wanted .. "['\"]")
+    local constant_version = installed_main:find("PLUGIN_VERSION%s*=%s*['\"]" .. wanted .. "['\"]")
+    if not direct_version and not constant_version then
         logger.warn(LOG_MODULE, "installed main.lua version may not match manifest:", manifest.version)
     end
 

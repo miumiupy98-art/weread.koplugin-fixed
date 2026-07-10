@@ -91,7 +91,7 @@ local function merge_cookie_tables(current, updates)
     return current
 end
 
-local PLUGIN_VERSION = "0.2.5"
+local PLUGIN_VERSION = "0.3.0"
 
 local WeReadPlugin = WidgetContainer:extend{
     name = "weread",
@@ -400,7 +400,7 @@ function WeReadPlugin:getMainMenuItems()
             text = T(_("关于微信阅读修改版 (v%1)"), PLUGIN_VERSION),
             callback = function()
                 UIManager:show(InfoMessage:new{
-                    text = T(_("微信阅读 KOReader 插件修改版 v%1\n\n基于原版 weread.koplugin 修改。\n\n主要变化：\n• 调整划线/想法下载入口\n• 微信读书想法改为自定义弹窗显示\n• 评论不再写入 EPUB 正文，避免进入正文分页\n• 支持显示/隐藏划线和想法\n• 增加手动 OTA 检查更新入口\n\n说明：\n这是非官方修改版，仅供个人学习和技术研究使用。\n请遵守微信读书用户协议及相关法律法规。\n\nOriginal project:\nhttps://github.com/qiuyukang/weread.koplugin"), PLUGIN_VERSION),
+                    text = T(_("微信阅读 KOReader 插件修改版 v%1\n\n基于原版 weread.koplugin 修改。\n\n主要变化：\n• 调整划线/想法下载入口\n• 微信读书想法改为自定义弹窗显示\n• 评论不再写入 EPUB 正文，避免进入正文分页\n• 支持显示/隐藏划线和想法\n• 增加手动 OTA 检查更新入口\n• 增加插件内微信读书扫码登录\n\n说明：\n这是非官方修改版，仅供个人学习和技术研究使用。\n请遵守微信读书用户协议及相关法律法规。\n\nOriginal project:\nhttps://github.com/qiuyukang/weread.koplugin"), PLUGIN_VERSION),
                 })
             end,
         },
