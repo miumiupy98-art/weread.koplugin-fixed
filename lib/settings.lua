@@ -13,6 +13,12 @@ local defaults = {
     config_auth_fingerprint = "",
     config_preferences_fingerprint = "",
     curl_payload = {},
+    account = {
+        name = "",
+        user_vid = "",
+        login_method = "",
+        login_time = 0,
+    },
     books = {},
     downloads = {},
     sync = {
@@ -152,6 +158,7 @@ function Settings:reset_account()
     self:set("wr_ticket", "")
     self:set("wr_wrpa", "")
     self:set("curl_payload", {})
+    self:set("account", deepcopy(defaults.account))
     self:flush()
 end
 
@@ -169,7 +176,8 @@ function Settings:apply_config(config, options)
     if type(config) ~= "table" then
         return false, "config must return a table"
     end
-    if type(config.api_key) == "string" then
+    -- A blank config value must not erase an API key obtained by QR login.
+    if type(config.api_key) == "string" and config.api_key:match("%S") then
         self:set("api_key", config.api_key)
     end
     if options.apply_preferences ~= false and type(config.sync) == "table" then

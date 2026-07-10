@@ -11,6 +11,12 @@ if not ok_json then
 end
 
 local DEFAULT_TIMEOUT_SECONDS = 15
+local QR_LOGIN_TIMEOUT_SECONDS = 65
+local SKILLS_PAGE_URL = "https://weread.qq.com/r/weread-skills"
+local LOGIN_UID_URL = "https://weread.qq.com/api/auth/getLoginUid"
+local LOGIN_INFO_URL = "https://weread.qq.com/api/auth/getLoginInfo"
+local USER_INFO_URL = "https://weread.qq.com/api/userInfo"
+local API_KEY_URL = "https://weread.qq.com/api/skills/apikeyGet"
 local unpack_args = unpack or table.unpack
 
 local Client = {}
@@ -38,6 +44,14 @@ local function scalar_header_value(headers, name)
         return nil
     end
     return value
+end
+
+local function merge_response_cookies(cookies, headers)
+    local set_cookie = header_value(headers, "set-cookie")
+    if set_cookie then
+        return Cookie.merge_set_cookie(cookies or {}, set_cookie)
+    end
+    return cookies or {}
 end
 
 local function http_error(client, code, text, headers)
@@ -311,6 +325,178 @@ function Client:get_binary(url, opts)
         return text, code, resp_headers
     end
     error(http_error(self, code, text, resp_headers))
+end
+
+-- Start a fresh WeRead QR login session and return its temporary UID.
+-- The initial skills-page request establishes the same session cookies used by
+-- WeRead's own login page.
+function Client:begin_qr_login()
+    local login_cookies = {}
+
+    local _, page_code, page_headers = self:request_follow({
+        url = SKILLS_PAGE_URL,
+        method = "GET",
+        timeout = 20,
+        headers = {
+            ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ["Referer"] = "https://weread.qq.com/",
+        },
+    })
+    login_cookies = merge_response_cookies(login_cookies, page_headers)
+    if not page_code or page_code < 200 or page_code >= 300 then
+        error("Unable to open WeRead login page (HTTP " .. tostring(page_code) .. ")")
+    end
+
+    local headers = {
+        ["Accept"] = "application/json, text/plain, */*",
+        ["Referer"] = SKILLS_PAGE_URL,
+    }
+    local cookie_header = Cookie.to_header(login_cookies)
+    if cookie_header ~= "" then
+        headers["Cookie"] = cookie_header
+    end
+
+    local text, code, resp_headers = self:request({
+        url = LOGIN_UID_URL,
+        method = "GET",
+        timeout = 20,
+        headers = headers,
+    })
+    login_cookies = merge_response_cookies(login_cookies, resp_headers)
+    if not code or code < 200 or code >= 300 then
+        error(http_error(self, code, text, resp_headers))
+    end
+
+    local data = self:json_decode(text)
+    if type(data) ~= "table" or type(data.uid) ~= "string" or data.uid == "" then
+        error("WeRead did not return a valid login UID")
+    end
+
+    self._qr_login_cookies = login_cookies
+    return data.uid
+end
+
+-- Wait for the phone to scan/confirm the QR code. With an empty OTP, preserve
+-- WeRead's exact query form: ...&otp (without an equals sign).
+function Client:poll_qr_login(uid, otp)
+    if type(uid) ~= "string" or uid == "" then
+        error("Missing QR login UID")
+    end
+
+    local url = LOGIN_INFO_URL .. "?uid=" .. WeRead.urlencode(uid) .. "&otp"
+    if type(otp) == "string" and otp ~= "" then
+        url = url .. "=" .. WeRead.urlencode(otp)
+    end
+
+    local login_cookies = self._qr_login_cookies or {}
+    local headers = {
+        ["Accept"] = "application/json, text/plain, */*",
+        ["Referer"] = SKILLS_PAGE_URL,
+    }
+    local cookie_header = Cookie.to_header(login_cookies)
+    if cookie_header ~= "" then
+        headers["Cookie"] = cookie_header
+    end
+
+    local text, code, resp_headers = self:request({
+        url = url,
+        method = "GET",
+        timeout = QR_LOGIN_TIMEOUT_SECONDS,
+        headers = headers,
+    })
+    self._qr_login_cookies = merge_response_cookies(login_cookies, resp_headers)
+    if not code or code < 200 or code >= 300 then
+        error(http_error(self, code, text, resp_headers))
+    end
+
+    local data = self:json_decode(text)
+    if type(data) ~= "table" then
+        error("WeRead returned an invalid QR login response")
+    end
+    return data
+end
+
+local function authenticated_get_json(client, url, cookies, web_login_vid, access_token)
+    local text, code, resp_headers = client:request({
+        url = url,
+        method = "GET",
+        timeout = 20,
+        headers = {
+            ["Accept"] = "application/json, text/plain, */*",
+            ["Referer"] = SKILLS_PAGE_URL,
+            ["Cookie"] = Cookie.to_header(cookies),
+            ["X-Vid"] = web_login_vid,
+            ["X-Skey"] = access_token,
+        },
+    })
+    cookies = merge_response_cookies(cookies, resp_headers)
+    if not code or code < 200 or code >= 300 then
+        error(http_error(client, code, text, resp_headers))
+    end
+    local data = client:json_decode(text)
+    if type(data) ~= "table" then
+        error("WeRead returned an invalid JSON response")
+    end
+    return data, cookies
+end
+
+-- Convert a successful QR result into persistent Cookie/API-key settings.
+-- Credentials are saved only after userInfo and apikeyGet both succeed.
+function Client:complete_qr_login(login_result)
+    if type(login_result) ~= "table" or login_result.succeed ~= true then
+        error("QR login has not succeeded")
+    end
+
+    local web_login_vid = tostring(login_result.webLoginVid or "")
+    local access_token = tostring(login_result.accessToken or "")
+    local refresh_token = tostring(login_result.refreshToken or "")
+    if web_login_vid == "" or access_token == "" then
+        error("QR login response is missing account credentials")
+    end
+
+    local cookies = self.settings:get("cookies", {})
+    for key, value in pairs(self._qr_login_cookies or {}) do
+        cookies[key] = value
+    end
+    cookies.wr_vid = web_login_vid
+    cookies.wr_skey = access_token
+    cookies.wr_ql = "0"
+    if refresh_token ~= "" then
+        cookies.wr_rt = WeRead.urlencode(refresh_token)
+    end
+
+    local user_url = USER_INFO_URL .. "?userVid=" .. WeRead.urlencode(web_login_vid)
+    local user_info
+    user_info, cookies = authenticated_get_json(
+        self, user_url, cookies, web_login_vid, access_token
+    )
+
+    local api_result
+    api_result, cookies = authenticated_get_json(
+        self, API_KEY_URL .. "?only_show=1", cookies, web_login_vid, access_token
+    )
+    local api_key = type(api_result.apikey) == "string" and api_result.apikey or ""
+    if api_key == "" then
+        error("WeRead did not return an API key")
+    end
+
+    local account = {
+        name = type(user_info.name) == "string" and user_info.name or "",
+        user_vid = web_login_vid,
+        login_method = "qr",
+        login_time = os.time(),
+    }
+    self.settings:set("cookies", cookies)
+    self.settings:set("api_key", api_key)
+    self.settings:set("account", account)
+    self.settings:flush()
+    self._qr_login_cookies = nil
+
+    return account
+end
+
+function Client:cancel_qr_login()
+    self._qr_login_cookies = nil
 end
 
 function Client:renew_cookie()
