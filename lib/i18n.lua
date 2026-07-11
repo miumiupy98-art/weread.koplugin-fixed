@@ -2,7 +2,7 @@ local I18n = {}
 
 local zh = {
     ["WeRead"] = "微信读书",
-    ["Read WeRead books in KOReader, cache chapters, and sync reading progress."] = "在 KOReader 中阅读微信读书、缓存章节并同步阅读进度。",
+    ["Browse and download WeRead books and public-account articles, with QR login, annotations, footnotes, and OTA updates."] = "在 KOReader 中浏览和下载微信读书书籍及公众号文章，支持扫码登录、划线想法、脚注和 OTA 更新。",
     ["Sync WeRead progress"] = "同步微信读书进度",
     ["Bookshelf"] = "书架",
     ["Search"] = "搜索",

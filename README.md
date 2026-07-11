@@ -1,201 +1,259 @@
-# WeRead KOReader Plugin — 非官方修改版
+# WeRead KOReader Plugin — 非官方增强版 Fork
 
-> 本项目基于原 WeRead KOReader 插件制作，为非官方修改版。  
-> 原项目：<https://github.com/QiuYukang/weread.koplugin>  
-> 原作者：<https://github.com/QiuYukang>
+[![Upstream](https://img.shields.io/badge/upstream-QiuYukang%2Fweread.koplugin-555)](https://github.com/QiuYukang/weread.koplugin)
+[![Maintained fork](https://img.shields.io/badge/fork-miumiupy98--art%2Fweread.koplugin--fixed-555)](https://github.com/miumiupy98-art/weread.koplugin-fixed)
 
-本项目不是原插件的官方版本。  
-原项目及其基础代码的相关权利归原作者所有；本修改版保留原项目来源和作者署名。
+本项目是 [`QiuYukang/weread.koplugin`](https://github.com/QiuYukang/weread.koplugin) 的公开增强版 Fork，用于在 KOReader 中浏览、下载和阅读微信读书书籍及公众号文章。
 
-## 本修改版的主要变化
+本分支保留上游项目的基础微信读书访问、内容解析和 KOReader 集成能力，并继续维护扫码登录、账号凭据管理、划线与想法弹窗、原书脚注处理、OTA 更新及安全发布等增强功能。
 
-本 Fork 在原项目基础上进行了部分 bug 修复、功能增强和行为调整，主要包括：
+> 本项目不是上游项目的官方版本。上游来源、提交历史及代码差异均通过 GitHub Fork 关系公开保留。
 
-### 新增功能
+## 本 Fork 的主要增强
 
-- 增加“显示划线和想法”的相关功能。
-- 当当前书籍为 clean 版本时，增加提示，引导用户重新下载带划线/想法的版本。
-- 增加重新下载带评论版本书籍的操作入口。
+- **插件内微信扫码登录**：可直接在 KOReader 中显示二维码，并支持登录确认和四位验证码。
+- **账号凭据持久化**：登录成功后保存 Cookie、API Key 和账号信息；`config.lua` 仅作为高级或备用配置方式。
+- **双版本整书下载**：可分别生成干净 EPUB，或生成带微信读书划线和想法的 EPUB。
+- **想法独立存储与弹窗显示**：想法数据保存在本地 JSON 中，不写入 EPUB 正文分页；点击划线后由插件弹窗显示。
+- **划线显示控制**：阅读缓存书籍时可显示或隐藏已嵌入的划线标记。
+- **原书脚注处理**：将部分图片注脚和跨文件脚注转换为更适合 KOReader 的 EPUB3 内联脚注。
+- **手动 OTA 更新**：支持检查更新、下载更新包、SHA-256 校验、安装前备份和成功启动后的备份清理。
+- **账号安全清理**：清除账号时同步删除持久化凭据、设置备份和本地 `config.lua` 凭据文件，已下载书籍不会被删除。
+- **安全发布包**：完整包不包含用户 Cookie、API Key、Token、二维码状态、运行设置、缓存书籍或日志。
 
-### 修复与调整
+## 功能概览
 
-- 修复部分情况下封面或书籍信息处理异常的问题。
-- 修复部分菜单逻辑与实际功能不一致的问题。
-- 调整“更新当前书划线/评论”的逻辑，使其更符合当前使用需求。
-- 移除部分不再需要或与现有功能重复的实验性功能。
+### 书籍
 
-## 注意事项
+- 浏览微信读书书架并搜索书籍。
+- 查看书籍信息和章节列表。
+- 下载单章或整本书为 EPUB。
+- 处理章节内容、CSS、封面和图片资源。
+- 自动生成目录。
+- 下载干净 EPUB，或下载带划线和想法的 EPUB。
+- 阅读时显示或隐藏划线，点击划线查看想法。
 
-- 本项目不会包含任何用户账号、cookie、token 或私人配置。
-- 使用者需要自行配置自己的账号信息。
-- 本仓库仅作为个人修改版维护，不代表原项目官方立场。
+### 公众号
 
-# WeRead KOReader Plugin
+- 浏览微信读书书架中的公众号。
+- 获取公众号文章列表。
+- 下载文章为适合 KOReader 阅读的 HTML。
+- 可选择是否下载并内嵌文章图片。
+- 文章列表和已下载文章保存在本地缓存中。
 
-> **免责声明**：本项目仅供个人学习和技术研究使用，不得用于商业用途。使用本项目所产生的一切后果（包括但不限于账号封禁、数据丢失等）由使用者自行承担，项目作者概不负责。请遵守微信读书的用户协议和相关法律法规。
+### 阅读时间上报
 
-在 KOReader 上阅读微信读书书籍和公众号文章、同步阅读时长的插件。
+- 可选择是否向微信读书上报阅读时长。
+- 支持自动关联当前微信读书缓存书籍，或手动选择目标书籍。
+- 可设置仅在阅读文档时上报。
+- 可查看上报状态、次数、最近上报时间和错误信息。
 
-## 功能
+> 阅读进度双向同步和当前书籍详情仍处于开发状态，相关菜单目前禁用。
 
-**书籍**
+## 环境要求
 
-- 浏览微信读书书架，搜索书籍
-- 下载单章或整本书为 EPUB，直接在 KOReader 中阅读
-- 章节内容解码、CSS 样式、图片资源打包
-- 自动生成目录（TOC），自动嵌入封面
-- 下载并嵌入划线和想法，阅读时可一键显示/隐藏，点击划线查看想法内容
+- 已安装 KOReader 的 Kindle 或其他兼容设备。
+- 建议使用较新的 KOReader 版本。过旧版本可能无法加载插件，表现为“工具”菜单中没有“微信读书”。
+- 使用在线功能时需要设备联网。
 
-**公众号**
+## 安装完整包
 
-- 浏览已关注的公众号列表
-- 下载公众号文章为 HTML（图片内嵌 base64，KOReader 可自由调节字体大小）
-- 文章列表本地缓存，无需重复请求
+1. 下载名称包含 `full-safe` 的完整安装包。
+2. 解压后确认目录结构只有一层插件目录：
 
-**阅读时间上报**
+   ```text
+   koreader/plugins/weread.koplugin/
+   ├── _meta.lua
+   ├── main.lua
+   └── lib/
+   ```
 
-- 后台自动向微信读书上报阅读时长（默认每 30 秒一次）
-- 支持两种目标书籍模式：
-  - **自动关联**：打开微信读书缓存书籍时自动上报该书，关闭时自动停止
-  - **手动设置**：从书架选择一本固定书籍作为上报对象
-- 支持「仅在阅读时上报」或「KOReader 启动即上报」两种触发模式
-- 上报状态可在菜单中查看（已上报次数、最近上报时间、错误信息）
+3. 将整个 `weread.koplugin` 文件夹复制到 KOReader 的 `plugins` 目录。
+4. 完全退出并重新启动 KOReader。
+5. 打开：
 
-**书籍管理**
+   ```text
+   工具 → 微信读书
+   ```
 
-- 书架支持多种排序方式（最后阅读时间、书名、默认顺序）
-- 书籍详情页展示作者、出版社、评分、字数、阅读进度等信息
-- EPUB 自动嵌入封面图片
-- 缓存管理：查看/清理单本或全部缓存
-- 自定义下载目录：可指定书籍/文章的保存位置（默认 `<KOReader 数据目录>/weread/cache`）
+### 常见安装错误
 
-## TODO
+错误结构：
 
-- [ ] 阅读进度双向同步（KOReader 位置 ↔ 微信读书进度映射）
-- [ ] 当前书籍详情页（阅读中展示微信读书元数据）
-- [ ] 独立的标注/笔记浏览界面（书签、热门划线聚合查看；阅读时查看划线和想法已支持，见「功能 → 书籍」）
-
-## 安装
-
-> ⚠️ 请使用**较新版本**的 KOReader，过旧的版本可能导致插件无法加载或启动失败（表现为「工具」菜单下找不到「微信读书」）。已知 `2024.11` 会出问题，`2026.3` 可正常使用；建议升级到最新版。详见 [#14](https://github.com/QiuYukang/weread.koplugin/issues/14)。
-
-将插件目录复制到 KOReader 的 plugins 目录：
-
-```
-koreader/plugins/weread.koplugin/
-```
-
-重启 KOReader，在菜单中找到：
-
-```
-工具 → 微信读书
+```text
+koreader/plugins/weread.koplugin/weread.koplugin/main.lua
 ```
 
-## 配置
+正确结构：
 
-所有配置通过 `config.lua` 文件完成。首次使用：
+```text
+koreader/plugins/weread.koplugin/main.lua
+```
+
+## 首次登录
+
+### 推荐：插件内扫码登录
+
+1. 打开 `工具 → 微信读书 → 设置 → 账号管理 → 微信扫码登录`。
+2. 使用微信扫描设备上的二维码。
+3. 在手机端确认登录。
+4. 如手机页面显示四位验证码，在 KOReader 中输入验证码。
+5. 登录成功后，插件会保存账号 Cookie、官方 API Key 和账号信息。
+
+可通过以下位置检查状态：
+
+```text
+工具 → 微信读书 → 设置 → 账号管理 → 账号状态
+```
+
+### 备用：手动导入 Cookie 或 cURL
+
+扫码登录不可用时，可进入：
+
+```text
+工具 → 微信读书 → 设置 → 账号管理 → 手动导入 Cookie/cURL（备用）
+```
+
+支持粘贴：
+
+- 浏览器中的原始 Cookie header；或
+- 从 `https://weread.qq.com/web/book/read` 请求复制的完整 cURL。
+
+### 高级方式：`config.lua`
+
+普通用户不需要创建 `config.lua`。该文件仅用于：
+
+- 手动配置或调试；
+- 导入公众号所需的浏览器凭据；
+- 配置缓存、阅读时间上报等高级选项；
+- 扫码登录不可用时恢复账号配置。
+
+使用方法：
 
 ```bash
 cp config.example.lua config.lua
 ```
 
-在电脑上编辑 `config.lua`，然后将整个插件目录同步到设备。
+填写后，在 KOReader 中选择：
 
-插件启动时自动加载 `config.lua`，也可以在运行时通过 `设置 → 重新加载 config.lua` 热加载。
-
-### 获取 API Key
-
-API Key 用于浏览书架、搜索书籍、读取进度。
-
-1. 手机打开**微信读书 App**
-2. 点击底部 **我** 标签
-3. 进入 **设置**
-4. 找到 **微信读书SKILL** **获取API Key** 并复制
-
-```lua
-api_key = "wrk-xxxxxxxxxxxxxxxxxxxxxxxx",
+```text
+工具 → 微信读书 → 设置 → 重新加载 config.lua
 ```
 
-### 获取书籍 cURL（cookie + 上报 payload）
+> `config.lua` 可能包含敏感凭据，不应提交到 GitHub、放入 Release 压缩包或发送给其他人。
 
-`curl` 字段用于提取登录 cookie 和阅读上报所需的 payload 字段。
+## 下载书籍
 
-1. 电脑浏览器打开 [weread.qq.com](https://weread.qq.com)
-2. 登录你的微信读书账号
-3. 打开**任意一本书**的阅读页面
-4. 按 **F12** 打开开发者工具，切换到 **Network（网络）** 标签
-5. 在网络请求列表中找到 `read` 请求（URL 包含 `/web/book/read`）
-6. 右键该请求 → **Copy as cURL (bash)**
-7. 粘贴到 `config.lua` 的 `curl` 字段
+打开书籍详情后，可选择：
 
-```lua
-curl = [[
-curl 'https://weread.qq.com/web/book/read' \
-  -H 'accept: ...' \
-  -b '...' \
-  --data-raw '{...}'
-]],
+### 下载完整书籍
+
+生成文件名带 `full` 的干净 EPUB：
+
+- 不请求微信读书划线和想法；
+- 下载速度通常更快；
+- 适合只阅读正文。
+
+### 下载完整书籍（带划线和想法）
+
+生成文件名带 `with-thoughts` 的 EPUB：
+
+- 在正文中嵌入划线定位标记；
+- 将想法数据独立保存到本地缓存；
+- 点击划线时由插件弹窗显示想法；
+- 想法内容不会作为普通正文进入分页。
+
+打开已缓存的微信读书书籍时，还可使用：
+
+```text
+显示/隐藏划线和想法
+重新下载当前书（带划线和想法）
 ```
 
-> 如果找不到 `/web/book/read` 请求，在阅读页面等待 30 秒左右，它会自动发送阅读时长上报请求。
+如果当前打开的是干净 EPUB，切换“显示划线和想法”不会自动添加标注，需要重新下载带标注版本。
 
-### 获取公众号 cURL（x-wrpa-0 验证头）
+## 脚注处理
 
-`mp_curl` 字段用于获取公众号文章列表所需的验证头。
+插件会尝试识别微信读书 EPUB 中的：
 
-1. 电脑浏览器打开 [weread.qq.com](https://weread.qq.com)
-2. 进入**任意一个公众号**的文章列表页面
-3. **F12** → **Network**
-4. 找到 `articles` 请求（URL 包含 `/web/mp/articles`）
-5. 右键 → **Copy as cURL (bash)**
-6. 粘贴到 `config.lua` 的 `mp_curl` 字段
+- 图片形式的注脚引用；
+- 指向其他 `Text/*.xhtml` 文件的脚注链接；
+- 可解析的脚注锚点和脚注正文。
 
-```lua
-mp_curl = [[
-curl 'https://weread.qq.com/web/mp/articles?bookId=...' \
-  -H 'accept: ...' \
-  -b '...' \
-  -H 'x-wrpa-0: ...'
-]],
+识别成功后，将其转换为 EPUB3 内联脚注，以改善 KOReader 中的点击和显示体验。无法可靠识别的链接会保留原样，避免错误改写正文。
+
+## 公众号文章
+
+公众号文章列表可能需要浏览器请求中的 `x-wr-ticket` 或 `x-wrpa-0`。扫码登录后如果文章列表仍无法加载，可在插件提示框中粘贴：
+
+- `x-wr-ticket` 的值；或
+- 从 `/web/mp/articles` 请求复制的完整 cURL。
+
+也可在 `config.lua` 中填写 `mp_curl`、`wr_ticket` 或 `wr_wrpa`，然后重新加载配置。
+
+默认不下载公众号文章图片。启用图片下载可能显著增加下载时间和文件大小。
+
+## OTA 更新
+
+插件只在用户主动选择时检查更新：
+
+```text
+工具 → 微信读书 → 检查更新
 ```
 
-> `mp_curl` 里包含的 cookie 如果比 `curl` 里的更新，插件会自动使用更新的版本。
+更新流程包括：
 
-### 配置项一览
+1. 获取远程更新清单；
+2. 比较版本号；
+3. 下载 OTA 更新包；
+4. 校验 SHA-256；
+5. 在插件目录外创建备份；
+6. 安装新文件并重启 KOReader；
+7. 新版本成功启动后清理备份。
 
-| 字段 | 用途 | 必填 |
-|------|------|------|
-| `api_key` | 书架、搜索、进度同步 | 推荐 |
-| `curl` | 登录 cookie + 阅读上报 payload | 推荐 |
-| `mp_curl` | 公众号文章列表（x-wrpa-0） | 读公众号时需要 |
-| `cookie` | 备选，仅在 curl 为空时使用 | 可选 |
-| `sync` | 进度同步行为 | 可选 |
-| `cache` | 图片/划线想法下载、缓存大小限制 | 可选 |
-| `read_report` | 阅读时间上报间隔 | 可选 |
+OTA 更新不会使用完整安装包，也不应覆盖用户运行设置。首次安装、插件损坏或跨越不兼容版本时，应使用 `full-safe` 完整包手动覆盖安装。
 
-### Cookie 过期
+## 账号数据和隐私
 
-微信读书的 cookie 会定期过期。插件会尝试自动续期，但如果续期失败：
+账号凭据通常保存在 KOReader 的运行设置中，而不是发布包中。执行“清除账号数据”时会清除：
 
-1. 重新在浏览器中登录 weread.qq.com
-2. 重新复制 cURL 到 `config.lua`
-3. 在 KOReader 中：`设置 → 重新加载 config.lua`
+- 微信读书 Cookie；
+- API Key；
+- 账号名称及登录方式；
+- 公众号验证凭据；
+- 阅读上报请求参数；
+- `weread.lua.old` 和 `weread.lua.new` 中可能残留的凭据；
+- 插件目录中的 `config.lua` 及常见备份文件。
+
+已下载书籍和文章缓存会保留。如需删除缓存，请使用“缓存管理”。
+
+发布包必须排除：
+
+```text
+config.lua
+config.lua.old
+config.lua.new
+config.lua.bak
+settings/weread.lua
+settings/weread.lua.old
+settings/weread.lua.new
+缓存书籍、文章、日志和 OTA 临时文件
+```
 
 ## 菜单结构
 
-```
+```text
 微信读书
-├── 同步进度           （阅读书籍时显示，开发中）
-├── 书籍详情           （阅读书籍时显示，开发中）
-├── 显示划线和想法     （阅读书籍时显示，开关，控制已下载书籍划线和想法的显隐）
-├── 书架               书架浏览（书籍 + 公众号分类）
-├── 搜索               搜索微信读书
-├── 阅读时间上报        后台上报阅读时长
+├── 同步进度（阅读时显示，开发中）
+├── 书籍详情（阅读时显示，开发中）
+├── 显示/隐藏划线和想法（阅读微信读书缓存书籍时显示）
+├── 重新下载当前书（带划线和想法）（阅读时显示）
+├── 书架
+├── 搜索
+├── 阅读时间上报
 │   ├── 启用阅读时间上报
 │   ├── 仅在阅读时上报
 │   ├── 选择目标书籍
-│   │   ├── 自动关联微信读书书籍
-│   │   └── 手动设置上报书籍
 │   └── 上报状态
 ├── 设置
 │   ├── 缓存管理
@@ -203,42 +261,90 @@ curl 'https://weread.qq.com/web/mp/articles?bookId=...' \
 │   │   └── 缓存目录
 │   ├── 重新加载 config.lua
 │   ├── 立即续期 Cookie
-│   ├── 进度管理
-│   │   ├── 打开时拉取进度（暂不可用）
-│   │   └── 关闭时上传进度（暂不可用）
+│   ├── 进度管理（开发中）
 │   ├── 下载内容
-│   │   ├── 书籍图片（默认开启）
-│   │   ├── 公众号文章图片（默认关闭）
-│   │   └── 划线和想法（默认关闭）
+│   │   ├── 书籍图片
+│   │   └── 公众号文章图片
 │   ├── 书架排序
 │   └── 账号管理
+│       ├── 微信扫码登录
 │       ├── 账号状态
+│       ├── 手动导入 Cookie/cURL（备用）
 │       └── 清除账号数据
+├── 检查更新
 └── 关于
 ```
 
 ## 文件结构
 
-```
+```text
 weread.koplugin/
-├── _meta.lua              插件元数据
-├── main.lua               入口、UI、业务逻辑
-├── config.example.lua     配置模板
-├── config.lua             用户配置（git 忽略）
-├── CLAUDE.md              开发规范
-├── lib/
-│   ├── client.lua          HTTP 客户端
-│   ├── content.lua         内容解码、EPUB/HTML 生成
-│   ├── cookie.lua          Cookie 解析
-│   ├── crypto.lua          SHA-256、MD5
-│   ├── download_dialog.lua 下载进度对话框
-│   ├── i18n.lua            中文翻译
-│   ├── settings.lua        设置持久化
-│   └── weread.lua          微信读书协议工具
-├── scripts/
-│   ├── fetch_weread_epub.py     EPUB 生成参考脚本
-│   └── verify_mp_articles.py    公众号 API 验证脚本
-└── docs/
-    ├── weread-api-reference.md      API 接口参考
-    └── weread-content-research.md   内容解码研究
+├── _meta.lua                  插件元数据
+├── main.lua                   插件入口、菜单和主要业务流程
+├── config.example.lua         高级配置模板，不包含真实凭据
+├── README.md                  使用说明
+├── NOTICE.md                  上游关系和项目声明
+├── CHANGELOG.md               修改版更新记录
+├── RELEASE-SAFETY.md          发布包安全检查说明
+├── fonts/
+│   └── NotoEmoji-Regular.ttf  想法弹窗 Emoji 字体
+└── lib/
+    ├── annotations.lua        划线标记生成和处理
+    ├── client.lua             微信读书 HTTP/API 客户端与扫码登录
+    ├── content.lua            内容解码、资源处理和 EPUB/HTML 生成
+    ├── cookie.lua             Cookie 与 cURL 解析
+    ├── crypto.lua             哈希与签名工具
+    ├── download_dialog.lua    下载进度界面
+    ├── footnotes.lua          原书脚注识别和转换
+    ├── i18n.lua               界面翻译
+    ├── settings.lua           KOReader 设置持久化
+    ├── thought_popup.lua      想法弹窗
+    ├── thoughts.lua           想法下载、缓存与划线注入
+    ├── updater.lua            OTA 更新
+    └── weread.lua             微信读书协议工具
 ```
+
+## 故障排查
+
+### 插件没有出现在菜单中
+
+1. 检查目录是否为 `koreader/plugins/weread.koplugin/main.lua`。
+2. 确认完整包没有多套一层目录。
+3. 确认 `lib/weread.lua` 等依赖文件完整。
+4. 确认 `fonts/NotoEmoji-Regular.ttf` 存在。
+5. 升级 KOReader 后重试。
+6. 查看 KOReader 的 `crash.log`，搜索 `weread.koplugin`、`module not found`、`unfinished string` 或 Lua 语法错误。
+
+### 能打开插件，但书架无法加载
+
+- 检查网络；
+- 打开“账号状态”确认 Cookie 和 API Key 均已配置；
+- 重新扫码登录；
+- 或手动导入新的 Cookie/cURL。
+
+### 公众号列表无法加载
+
+- 公众号接口可能需要新的 `x-wr-ticket`；
+- 根据插件提示粘贴该值或完整 `/web/mp/articles` cURL；
+- 必要时更新 `config.lua` 并重新加载。
+
+### 划线或想法没有显示
+
+- 确认下载的是 `with-thoughts` 版本；
+- 确认“显示/隐藏划线和想法”处于开启状态；
+- 微信读书接口可能没有返回对应章节的想法数据；
+- 重新下载当前书的带标注版本。
+
+## 上游关系与贡献说明
+
+本 Fork 基于上游项目继续开发。基础的微信读书访问、内容解析和 KOReader 插件结构来源于上游项目；本分支增加和维护的功能通过公开提交记录保留差异。
+
+- 上游项目：<https://github.com/QiuYukang/weread.koplugin>
+- 上游作者：<https://github.com/QiuYukang>
+- 本增强分支：<https://github.com/miumiupy98-art/weread.koplugin-fixed>
+
+借鉴或合并上游后续修复时，应保留可追踪的提交说明，不通过改名或打乱代码结构隐藏来源。
+
+## 使用声明
+
+本项目仅用于个人学习和技术研究，不代表微信读书或上游项目的官方立场。使用者应自行确认适用的授权条件，遵守微信读书用户协议及相关法律法规，并自行承担账号、数据和设备操作风险。

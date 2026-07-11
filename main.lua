@@ -397,10 +397,58 @@ function WeReadPlugin:getMainMenuItems()
             end),
         },
         {
-            text = T(_("关于微信阅读修改版 (v%1)"), PLUGIN_VERSION),
+            text = T(_("About (v%1)"), PLUGIN_VERSION),
             callback = function()
+                local about_text
+                if I18n.is_zh() then
+                    about_text = T([[微信读书 KOReader 插件
+非官方增强版 Fork v%1
+
+本项目是 QiuYukang/weread.koplugin 的公开增强版 Fork，不是上游官方版本。
+
+本分支主要增强：
+• 插件内微信扫码登录及验证码处理
+• Cookie、API Key 和账号信息持久化
+• 干净 EPUB 与带划线/想法 EPUB 独立下载
+• 想法独立存储并通过自定义弹窗显示
+• 划线显示/隐藏及当前书重新下载入口
+• 微信读书原书脚注处理
+• OTA 更新、SHA-256 校验和更新备份保护
+• 账号凭据及设置备份安全清理
+
+上游项目：
+https://github.com/QiuYukang/weread.koplugin
+
+本增强分支：
+https://github.com/miumiupy98-art/weread.koplugin-fixed
+
+本项目仅用于个人学习和技术研究。请遵守微信读书用户协议、适用许可及相关法律法规。]], PLUGIN_VERSION)
+                else
+                    about_text = T([[WeRead KOReader Plugin
+Unofficial Enhanced Fork v%1
+
+This project is a public enhanced fork of QiuYukang/weread.koplugin and is not an official upstream release.
+
+Main additions maintained by this fork:
+• In-plugin QR login and verification-code handling
+• Persistent Cookie, API key, and account settings
+• Separate clean and annotated EPUB downloads
+• Independently stored thoughts with a custom popup
+• Annotation visibility controls and re-download actions
+• Original-book footnote processing
+• OTA updates with SHA-256 verification and backup protection
+• Secure credential and settings-backup cleanup
+
+Upstream:
+https://github.com/QiuYukang/weread.koplugin
+
+Maintained fork:
+https://github.com/miumiupy98-art/weread.koplugin-fixed
+
+For personal learning and technical research. Follow the WeRead user agreement, applicable licenses, and relevant laws.]], PLUGIN_VERSION)
+                end
                 UIManager:show(InfoMessage:new{
-                    text = T(_("微信阅读 KOReader 插件修改版 v%1\n\n基于原版 weread.koplugin 修改。\n\n主要变化：\n• 调整划线/想法下载入口\n• 微信读书想法改为自定义弹窗显示\n• 评论不再写入 EPUB 正文，避免进入正文分页\n• 支持显示/隐藏划线和想法\n• 增加手动 OTA 检查更新入口\n• 增加插件内微信读书扫码登录\n\n说明：\n这是非官方修改版，仅供个人学习和技术研究使用。\n请遵守微信读书用户协议及相关法律法规。\n\nOriginal project:\nhttps://github.com/qiuyukang/weread.koplugin"), PLUGIN_VERSION),
+                    text = about_text,
                 })
             end,
         },
