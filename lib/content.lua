@@ -167,106 +167,33 @@ local function write_file(path, data)
     file:close()
 end
 
-local crc32_table
-local function crc32(data)
-    if not crc32_table then
-        crc32_table = {}
-        for i = 0, 255 do
-            local crc = i
-            for bit_index = 1, 8 do
-                if bit.band(crc, 1) ~= 0 then
-                    crc = bit.bxor(bit.rshift(crc, 1), 0xedb88320)
-                else
-                    crc = bit.rshift(crc, 1)
-                end
-            end
-            crc32_table[i] = crc
+local function write_epub(path, entries)
+    local Archiver = require("ffi/archiver")
+    local archive = Archiver.Writer:new{}
+    if not archive:open(path, "epub") then
+        error("failed to open archive for writing: " .. tostring(archive.err))
+    end
+
+    local mtime = os.time()
+
+    archive:setZipCompression("store")
+    local mimetype_data = "application/epub+zip"
+    for _i, entry in ipairs(entries) do
+        if entry.name == "mimetype" then
+            mimetype_data = entry.data
+            break
         end
     end
-    local crc = 0xffffffff
-    for i = 1, #data do
-        local index = bit.band(bit.bxor(crc, data:byte(i)), 0xff)
-        crc = bit.bxor(bit.rshift(crc, 8), crc32_table[index])
-    end
-    return bit.bxor(crc, 0xffffffff)
-end
+    archive:addFileFromMemory("mimetype", mimetype_data, mtime)
 
-local function le16(n)
-    return string.char(bit.band(n, 0xff), bit.band(bit.rshift(n, 8), 0xff))
-end
-
-local function le32(n)
-    return string.char(
-        bit.band(n, 0xff),
-        bit.band(bit.rshift(n, 8), 0xff),
-        bit.band(bit.rshift(n, 16), 0xff),
-        bit.band(bit.rshift(n, 24), 0xff)
-    )
-end
-
-local function make_zip(entries)
-    local out = {}
-    local central = {}
-    local offset = 0
-
-    for entry_index, entry in ipairs(entries) do
-        local name = entry.name
-        local data = entry.data or ""
-        local crc = crc32(data)
-        local local_header = table.concat({
-            le32(0x04034b50),
-            le16(20),
-            le16(0),
-            le16(0),
-            le16(0),
-            le16(0),
-            le32(crc),
-            le32(#data),
-            le32(#data),
-            le16(#name),
-            le16(0),
-            name,
-        })
-        table.insert(out, local_header)
-        table.insert(out, data)
-
-        table.insert(central, table.concat({
-            le32(0x02014b50),
-            le16(20),
-            le16(20),
-            le16(0),
-            le16(0),
-            le16(0),
-            le16(0),
-            le32(crc),
-            le32(#data),
-            le32(#data),
-            le16(#name),
-            le16(0),
-            le16(0),
-            le16(0),
-            le16(0),
-            le32(0),
-            le32(offset),
-            name,
-        }))
-
-        offset = offset + #local_header + #data
+    archive:setZipCompression("deflate")
+    for _i, entry in ipairs(entries) do
+        if entry.name ~= "mimetype" then
+            archive:addFileFromMemory(entry.name, entry.data or "", mtime)
+        end
     end
 
-    local central_data = table.concat(central)
-    table.insert(out, central_data)
-    table.insert(out, table.concat({
-        le32(0x06054b50),
-        le16(0),
-        le16(0),
-        le16(#entries),
-        le16(#entries),
-        le32(#central_data),
-        le32(offset),
-        le16(0),
-    }))
-    return table.concat(out)
+    archive:close()
 end
 
 local function xml_escape(value)
@@ -378,9 +305,12 @@ local function swap_positions(encoded)
     local m = length - n - 2
     local step = #tostring(m)
     local i = 1
-    while #result < 10 and i + step < #tmp do
+    while #result < 10 and i + step - 1 < #tmp do
         table.insert(result, (tonumber(tmp:sub(i, i + step - 1)) or 0) % m)
-        table.insert(result, (tonumber(tmp:sub(i + 1, i + step)) or 0) % m)
+        local end2 = math.min(i + step, #tmp)
+        if i + 1 <= #tmp then
+            table.insert(result, (tonumber(tmp:sub(i + 1, end2)) or 0) % m)
+        end
         i = i + step
     end
     return result
@@ -607,7 +537,7 @@ function Content.save_chapter_epub(settings, book, chapter, xhtml, assets, css)
     for asset_index, asset in ipairs(asset_entries) do
         table.insert(entries, asset)
     end
-    write_file(path, make_zip(entries))
+    write_epub(path, entries)
     return path
 end
 
@@ -727,7 +657,7 @@ function Content.save_book_epub(settings, book, chapters, chapter_bodies, suffix
     table.insert(entries, { name = "OEBPS/nav.xhtml", data = nav })
     table.insert(entries, { name = "OEBPS/toc.ncx", data = ncx })
     table.insert(entries, { name = "OEBPS/style.css", data = css })
-    write_file(path, make_zip(entries))
+    write_epub(path, entries)
     return path
 end
 
@@ -901,7 +831,7 @@ function Content.fetch_chapter_shard(client, settings, book, chapter, endpoint)
         sc = 1,
         style = is_style_shard,
     })
-    local text = client:request({
+    local text, code = client:request({
         url = "https://weread.qq.com" .. endpoint,
         method = "POST",
         headers = {
@@ -912,6 +842,9 @@ function Content.fetch_chapter_shard(client, settings, book, chapter, endpoint)
         },
         body = client:json_encode(params),
     })
+    if not code or code < 200 or code >= 300 then
+        error(endpoint .. " failed: HTTP " .. tostring(code or "unknown"))
+    end
     if text == "{}" then
         error(endpoint .. " returned empty object")
     end
@@ -949,17 +882,12 @@ function Content.fetch_chapter_xhtml(client, settings, book, chapter)
 
     local ok, e0 = pcall(Content.fetch_chapter_shard, client, settings, book, chapter, "/web/book/chapter/e_0")
 
-    if ok and e0:sub(1, 1) == "{" then
+    if ok and e0:sub(1, 1) == "{" and e0:find('"bookId"', 1, true) then
         book._content_format = "txt"
         return Content.fetch_txt_as_xhtml(client, settings, book, chapter)
     end
 
     if not ok then
-        local txt_ok, txt_result = pcall(Content.fetch_txt_as_xhtml, client, settings, book, chapter)
-        if txt_ok then
-            book._content_format = "txt"
-            return txt_result
-        end
         error(e0)
     end
 
@@ -1078,29 +1006,52 @@ function Content.fetch_chapter_epub(client, settings, book, chapter, options)
     return path, chapter
 end
 
-function Content.fetch_single_chapter_content(client, settings, book, chapter, state)
+function Content.fetch_single_chapter_source(client, settings, book, chapter, state)
     state = state or {}
     local xhtml = Content.fetch_chapter_xhtml(client, settings, book, chapter)
     if not state.css then
         state.css = Content.fetch_chapter_css(client, settings, book, chapter)
     end
-    xhtml, state.css = apply_chapter_enrichments(client, settings, book, chapter, xhtml, state.css, state)
+    return xhtml
+end
+
+function Content.finalize_single_chapter_content(client, settings, book, chapter, xhtml, state)
+    state = state or {}
+    xhtml, state.css = apply_chapter_footnotes(
+        client, settings, book, chapter, xhtml, state.css, state
+    )
+
     local chapter_assets = {}
     local cache = settings:get("cache", {})
     if cache.download_book_images then
         state.used_asset_names = state.used_asset_names or {}
-        local tar_assets, src_map = Content.download_chapter_assets(client, book, chapter, state.used_asset_names)
-        for _, asset in ipairs(tar_assets) do
+        local tar_assets, src_map = Content.download_chapter_assets(
+            client, book, chapter, state.used_asset_names
+        )
+        for _i, asset in ipairs(tar_assets) do
             table.insert(chapter_assets, asset)
         end
         xhtml = Content.rewrite_image_sources(xhtml, src_map)
-        local inline_xhtml, inline_assets = Content.download_remote_images(client, xhtml, state.used_asset_names)
+        local inline_xhtml, inline_assets = Content.download_remote_images(
+            client, xhtml, state.used_asset_names
+        )
         xhtml = inline_xhtml
-        for _, a in ipairs(inline_assets) do
-            table.insert(chapter_assets, a)
+        for _i, asset in ipairs(inline_assets) do
+            table.insert(chapter_assets, asset)
         end
     end
     return xhtml, chapter_assets
+end
+
+function Content.fetch_single_chapter_content(client, settings, book, chapter, state)
+    state = state or {}
+    local xhtml = Content.fetch_single_chapter_source(client, settings, book, chapter, state)
+    xhtml, state.css = apply_chapter_annotations(
+        client, settings, book, chapter, xhtml, state.css, state
+    )
+    return Content.finalize_single_chapter_content(
+        client, settings, book, chapter, xhtml, state
+    )
 end
 
 function Content.fetch_chapters_epub(client, settings, book, chapters, options)

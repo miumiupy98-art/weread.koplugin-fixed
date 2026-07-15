@@ -95,7 +95,7 @@ end
 --- snapEndToSafeBoundary 将 end 位置向前（回退）调整，使其不落在 HTML 标签或实体内部。
 local function snapEndToSafeBoundary(runes, start, end_pos)
     local n = #runes
-    if end_pos <= start or end_pos > n then
+    if end_pos <= start or end_pos > n + 1 then
         return end_pos
     end
     -- 检查是否在 HTML 标签内部：从 end-1 向前扫描
@@ -124,11 +124,11 @@ end
 --- snapStartToSafeBoundary 将 start 位置向后（前进）调整，使其不落在 HTML 标签或实体内部。
 local function snapStartToSafeBoundary(runes, start, end_pos)
     local n = #runes
-    if start < 0 or start >= end_pos or start >= n then
+    if start < 1 or start >= end_pos or start > n then
         return start
     end
     -- 检查是否在 HTML 标签内部：从 start-1 向前扫描
-    for i = start - 1, 0, -1 do
+    for i = start - 1, 1, -1 do
         if i < start - 200 then break end
         if runes[i] == '>' then
             break -- 不在标签内部
@@ -144,7 +144,7 @@ local function snapStartToSafeBoundary(runes, start, end_pos)
         end
     end
     -- 检查是否在 HTML 实体内部：从 start-1 向前扫描
-    for i = start - 1, 0, -1 do
+    for i = start - 1, 1, -1 do
         if i < start - 12 then break end
         local r = runes[i]
         if r == ';' or r == '<' or r == '>' then
@@ -252,6 +252,391 @@ local function thoughtHref(book_id, chapter_uid, range_str)
     return "#" .. thoughtAnchorId(book_id, chapter_uid, range_str)
 end
 
+
+-- 评论位置允许使用修正后的 range，但锚点和缓存查询必须继续使用微信读书返回的原始 range。
+local function anchorRangeString(underline)
+    return tostring(underline.originalRange or underline.range or "")
+end
+
+local HTML_ENTITIES = {
+    amp = "&",
+    apos = "'",
+    gt = ">",
+    lt = "<",
+    nbsp = " ",
+    quot = '"',
+    ensp = " ",
+    emsp = " ",
+    thinsp = " ",
+}
+
+local BLOCK_TAGS = {
+    address = true, article = true, aside = true, blockquote = true,
+    br = true, caption = true, dd = true, div = true, dl = true, dt = true,
+    figcaption = true, figure = true, footer = true, h1 = true, h2 = true,
+    h3 = true, h4 = true, h5 = true, h6 = true, header = true, hr = true,
+    li = true, main = true, nav = true, ol = true, p = true, pre = true,
+    section = true, table = true, tbody = true, td = true, tfoot = true,
+    th = true, thead = true, tr = true, ul = true,
+}
+
+local SURROUNDING_QUOTES = {
+    ['"'] = '"', ["'"] = "'",
+    ["“"] = "”", ["‘"] = "’",
+    ["「"] = "」", ["『"] = "』",
+    ["《"] = "》", ["〈"] = "〉",
+}
+
+local function codepointToUtf8(cp)
+    cp = tonumber(cp)
+    if not cp or cp < 0 or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF) then
+        return nil
+    end
+    if cp <= 0x7F then
+        return string.char(cp)
+    elseif cp <= 0x7FF then
+        return string.char(
+            0xC0 + math.floor(cp / 0x40),
+            0x80 + (cp % 0x40)
+        )
+    elseif cp <= 0xFFFF then
+        return string.char(
+            0xE0 + math.floor(cp / 0x1000),
+            0x80 + (math.floor(cp / 0x40) % 0x40),
+            0x80 + (cp % 0x40)
+        )
+    end
+    return string.char(
+        0xF0 + math.floor(cp / 0x40000),
+        0x80 + (math.floor(cp / 0x1000) % 0x40),
+        0x80 + (math.floor(cp / 0x40) % 0x40),
+        0x80 + (cp % 0x40)
+    )
+end
+
+local function decodeHtmlEntity(entity)
+    if type(entity) ~= "string" or #entity < 3 then
+        return nil
+    end
+    local body = entity:match("^&([^;]+);$")
+    if not body then
+        return nil
+    end
+    local named = HTML_ENTITIES[body:lower()]
+    if named then
+        return named
+    end
+    local hex = body:match("^#[xX]([0-9a-fA-F]+)$")
+    if hex then
+        return codepointToUtf8(tonumber(hex, 16))
+    end
+    local dec = body:match("^#(%d+)$")
+    if dec then
+        return codepointToUtf8(tonumber(dec, 10))
+    end
+    return nil
+end
+
+local function isIgnoredRune(r)
+    return r == "\226\128\139" -- U+200B ZERO WIDTH SPACE
+        or r == "\226\128\140" -- U+200C ZERO WIDTH NON-JOINER
+        or r == "\226\128\141" -- U+200D ZERO WIDTH JOINER
+        or r == "\226\129\160" -- U+2060 WORD JOINER
+        or r == "\239\187\191" -- U+FEFF BOM / zero-width no-break space
+end
+
+local function normalizeRune(r)
+    if isIgnoredRune(r) then
+        return nil
+    end
+    if r == "　" or r:match("^%s$") then
+        return " "
+    end
+    return r
+end
+
+local function appendNormalizedRune(text_runes, html_starts, html_ends, rune, html_start, html_end)
+    rune = normalizeRune(rune)
+    if not rune then
+        return
+    end
+    if rune == " " and text_runes[#text_runes] == " " then
+        -- 折叠连续空白，但扩展 HTML 结束位置，保证最终 range 不落在空白序列内部。
+        html_ends[#html_ends] = math.max(html_ends[#html_ends] or html_end, html_end)
+        return
+    end
+    text_runes[#text_runes + 1] = rune
+    html_starts[#html_starts + 1] = html_start
+    html_ends[#html_ends + 1] = html_end
+end
+
+local function trimRuneArrays(runes, starts, ends)
+    while #runes > 0 and runes[1] == " " do
+        table.remove(runes, 1)
+        if starts then table.remove(starts, 1) end
+        if ends then table.remove(ends, 1) end
+    end
+    while #runes > 0 and runes[#runes] == " " do
+        table.remove(runes)
+        if starts then table.remove(starts) end
+        if ends then table.remove(ends) end
+    end
+end
+
+-- 将章节 HTML 转为规范化可见文本，并记录每个文本 rune 对应的 HTML 0-based 起止坐标。
+-- 行级标签被折叠为空格；script/style 内容被忽略；常见实体会解码后参与匹配。
+local function buildTextMapping(html)
+    local html_runes = toRunes(html)
+    local text_runes, html_starts, html_ends = {}, {}, {}
+    local n = #html_runes
+    local i = 1
+    local skip_content_tag = nil
+
+    while i <= n do
+        local r = html_runes[i]
+        if r == "<" then
+            local close_pos = nil
+            for j = i + 1, n do
+                if html_runes[j] == ">" then
+                    close_pos = j
+                    break
+                end
+            end
+            if not close_pos then
+                appendNormalizedRune(text_runes, html_starts, html_ends, r, i - 1, i)
+                i = i + 1
+            else
+                local tag_parts = {}
+                for j = i + 1, close_pos - 1 do
+                    tag_parts[#tag_parts + 1] = html_runes[j]
+                end
+                local tag_text = table.concat(tag_parts)
+                local closing, tag_name = tag_text:match("^%s*(/?)%s*([%w]+)")
+                tag_name = tag_name and tag_name:lower() or nil
+
+                if skip_content_tag then
+                    if closing == "/" and tag_name == skip_content_tag then
+                        skip_content_tag = nil
+                    end
+                elseif tag_name == "script" or tag_name == "style" then
+                    if closing ~= "/" then
+                        skip_content_tag = tag_name
+                    end
+                elseif tag_name and BLOCK_TAGS[tag_name] then
+                    appendNormalizedRune(text_runes, html_starts, html_ends, " ", i - 1, close_pos)
+                end
+                i = close_pos + 1
+            end
+        elseif skip_content_tag then
+            i = i + 1
+        elseif r == "&" then
+            local entity_end = nil
+            for j = i + 1, math.min(i + 16, n) do
+                if html_runes[j] == ";" then
+                    entity_end = j
+                    break
+                elseif html_runes[j] == "<" or html_runes[j] == ">" or html_runes[j] == " " then
+                    break
+                end
+            end
+            if entity_end then
+                local entity_parts = {}
+                for j = i, entity_end do
+                    entity_parts[#entity_parts + 1] = html_runes[j]
+                end
+                local decoded = decodeHtmlEntity(table.concat(entity_parts))
+                if decoded then
+                    for _, decoded_rune in ipairs(toRunes(decoded)) do
+                        appendNormalizedRune(text_runes, html_starts, html_ends, decoded_rune, i - 1, entity_end)
+                    end
+                    i = entity_end + 1
+                else
+                    appendNormalizedRune(text_runes, html_starts, html_ends, r, i - 1, i)
+                    i = i + 1
+                end
+            else
+                appendNormalizedRune(text_runes, html_starts, html_ends, r, i - 1, i)
+                i = i + 1
+            end
+        else
+            appendNormalizedRune(text_runes, html_starts, html_ends, r, i - 1, i)
+            i = i + 1
+        end
+    end
+
+    trimRuneArrays(text_runes, html_starts, html_ends)
+    return text_runes, html_starts, html_ends
+end
+
+local function normalizeSearchRunes(text)
+    if type(text) ~= "string" or text == "" then
+        return {}
+    end
+    text = stripLeadingBOM(text)
+    local input = toRunes(text)
+    local runes = {}
+    local dummy_starts, dummy_ends = {}, {}
+    local i = 1
+    while i <= #input do
+        local r = input[i]
+        if r == "&" then
+            local entity_end = nil
+            for j = i + 1, math.min(i + 16, #input) do
+                if input[j] == ";" then
+                    entity_end = j
+                    break
+                elseif input[j] == " " then
+                    break
+                end
+            end
+            if entity_end then
+                local parts = {}
+                for j = i, entity_end do parts[#parts + 1] = input[j] end
+                local decoded = decodeHtmlEntity(table.concat(parts))
+                if decoded then
+                    for _, decoded_rune in ipairs(toRunes(decoded)) do
+                        appendNormalizedRune(runes, dummy_starts, dummy_ends, decoded_rune, 0, 0)
+                    end
+                    i = entity_end + 1
+                else
+                    appendNormalizedRune(runes, dummy_starts, dummy_ends, r, 0, 0)
+                    i = i + 1
+                end
+            else
+                appendNormalizedRune(runes, dummy_starts, dummy_ends, r, 0, 0)
+                i = i + 1
+            end
+        else
+            appendNormalizedRune(runes, dummy_starts, dummy_ends, r, 0, 0)
+            i = i + 1
+        end
+    end
+    trimRuneArrays(runes)
+
+    -- 微信读书的 abstract 有时带成对引号，而章节正文没有。
+    while #runes >= 2 and SURROUNDING_QUOTES[runes[1]] == runes[#runes] do
+        table.remove(runes, 1)
+        table.remove(runes)
+        trimRuneArrays(runes)
+    end
+    return runes
+end
+
+local function runesMatchAt(text_runes, needle, pos)
+    if pos < 1 or pos + #needle - 1 > #text_runes then
+        return false
+    end
+    for j = 1, #needle do
+        if text_runes[pos + j - 1] ~= needle[j] then
+            return false
+        end
+    end
+    return true
+end
+
+local function nearestTextIndex(html_starts, html_pos)
+    local count = #html_starts
+    if count == 0 then return 1 end
+    local lo, hi = 1, count
+    while lo <= hi do
+        local mid = math.floor((lo + hi) / 2)
+        if (html_starts[mid] or 0) < html_pos then
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    if lo > count then return count end
+    if lo <= 1 then return 1 end
+    local before = html_starts[lo - 1] or 0
+    local after = html_starts[lo] or 0
+    if math.abs(before - html_pos) <= math.abs(after - html_pos) then
+        return lo - 1
+    end
+    return lo
+end
+
+local function findBestMatch(text_runes, html_starts, needle, old_start, first_pos, last_pos)
+    if #needle == 0 or #needle > #text_runes then
+        return nil
+    end
+    first_pos = math.max(1, first_pos or 1)
+    last_pos = math.min(#text_runes - #needle + 1, last_pos or (#text_runes - #needle + 1))
+    if first_pos > last_pos then
+        return nil
+    end
+
+    local best, best_dist = nil, math.huge
+    local first_rune = needle[1]
+    for i = first_pos, last_pos do
+        if text_runes[i] == first_rune and runesMatchAt(text_runes, needle, i) then
+            local distance = math.abs((html_starts[i] or 0) - old_start)
+            if distance < best_dist then
+                best, best_dist = i, distance
+                if distance == 0 then break end
+            end
+        end
+    end
+    return best
+end
+
+local function fixUnderlineRange(text_runes, html_starts, html_ends, underline)
+    local abstract_runes = normalizeSearchRunes(underline.abstract)
+    if #abstract_runes < 2 or #abstract_runes > #text_runes then
+        return nil
+    end
+
+    local original_range = anchorRangeString(underline)
+    local old_start = tonumber(original_range:match("^(%d+)")) or 0
+    local center = nearestTextIndex(html_starts, old_start)
+    local window = math.max(1200, #abstract_runes * 6)
+
+    -- 优先在原始 range 附近搜索，减少重复短句被匹配到远处的风险。
+    local best = findBestMatch(
+        text_runes, html_starts, abstract_runes, old_start,
+        center - window, center + window
+    )
+    if not best then
+        best = findBestMatch(text_runes, html_starts, abstract_runes, old_start)
+    end
+    if not best then
+        return nil
+    end
+
+    local html_start = html_starts[best]
+    local html_end = html_ends[best + #abstract_runes - 1]
+    if html_start == nil or html_end == nil or html_end <= html_start then
+        return nil
+    end
+
+    local new_range = tostring(html_start) .. "-" .. tostring(html_end)
+    if new_range ~= tostring(underline.range or "") then
+        logger.info(
+            "[WeRead] annotation range corrected:",
+            "old=", tostring(underline.range),
+            "new=", new_range,
+            "abstract=", truncateRunes(underline.abstract, 40)
+        )
+    end
+    return new_range
+end
+
+local function firstReviewAbstract(range_review)
+    if type(range_review) ~= "table" or type(range_review.pageReviews) ~= "table" then
+        return nil
+    end
+    for _, page_review in ipairs(range_review.pageReviews) do
+        local review = type(page_review) == "table" and page_review.review or nil
+        if type(review) == "table" then
+            local abstract = review.abstract or review.contextAbstract
+            if type(abstract) == "string" and abstract:match("%S") then
+                return abstract
+            end
+        end
+    end
+    return nil
+end
+
 --- 微信读书想法/评论不再写入 EPUB 正文。
 -- 评论内容保存在 thoughts/*.json，由 main.lua 拦截内部锚点并显示自定义弹窗。
 -- 这里的链接只使用 #wrthought-... 内部锚点，不使用 wrthought://，也不生成 footnote aside。
@@ -276,17 +661,19 @@ function Annotations.injectUnderlines(html, underlines, thought_reviews, book_id
         logger.info("weread annotations: stripped BOM")
     end
 
-    -- 解析所有 range
+    -- 解析所有 range。显示位置可使用修正后的 range，评论绑定仍使用 originalRange。
     local ranges = {}
-    for _, ul in ipairs(underlines) do
-        local range_str = ul.range
+    for _, underline in ipairs(underlines) do
+        local range_str = underline.range
         if range_str then
             local start_pos, end_pos = parseRange(range_str)
-            if start_pos and end_pos and start_pos < end_pos then
+            if start_pos and end_pos and start_pos < end_pos and start_pos >= 1 then
                 ranges[#ranges + 1] = {
                     range_str = range_str,
                     start = start_pos,
                     end_pos = end_pos,
+                    hasThought = underline.hasThought == true,
+                    originalRange = underline.originalRange,
                 }
             end
         end
@@ -307,14 +694,14 @@ function Annotations.injectUnderlines(html, underlines, thought_reviews, book_id
 
     -- 预计算所有替换片段
     local replacements = {}
-    local prevEnd = 0
+    local prevEnd = 1
 
     for _, ul in ipairs(ranges) do
         local start_pos = ul.start
         local end_pos = ul.end_pos
 
-        -- 边界检查
-        if start_pos < 0 or end_pos > n or start_pos >= end_pos then
+        -- 边界检查（range 结束坐标允许为 n + 1，表示包含章节最后一个 rune）
+        if start_pos < 1 or end_pos > n + 1 or start_pos >= end_pos then
             goto continue
         end
 
@@ -338,7 +725,7 @@ function Annotations.injectUnderlines(html, underlines, thought_reviews, book_id
 
         -- 如果有想法数据：被下划线选中的“正文内容”成为可点击锚点；星号只作为视觉标记，不可点击。
         -- 不使用 wrthought://，避免 KOReader 外部链接提示；不生成 footnote aside，避免评论进入正文分页。
-        if thought_reviews and thought_reviews[ul.range_str] then
+        if ul.hasThought then
             local underline_open = '<span class="wr-underline">'
             local underline_close = '</span>'
             local underline_close_with_star = '</span><span class="wr-star">*</span>'
@@ -349,15 +736,17 @@ function Annotations.injectUnderlines(html, underlines, thought_reviews, book_id
                 wrapped[last_idx] = underline_close_with_star
             end
 
-            local anchor_id = thoughtAnchorId(book_id, chapter_uid, ul.range_str)
+            local data_range = anchorRangeString(ul)
+            local anchor_id = thoughtAnchorId(book_id, chapter_uid, data_range)
             local href = "#" .. anchor_id
-            local open_a = '<a class="wr-thought-link" data-wr-book="' .. htmlEscape(book_id or '')
+            local data_wr_attr = ' data-wr-range="' .. htmlEscape(data_range) .. '"'
+            local open_a = '<a class="wr-thought-link"' .. data_wr_attr
+                .. ' data-wr-book="' .. htmlEscape(book_id or '')
                 .. '" data-wr-chapter="' .. htmlEscape(chapter_uid or '')
-                .. '" data-wr-range="' .. htmlEscape(ul.range_str)
                 .. '" href="' .. htmlEscape(href) .. '">'
-            local open_a_with_id = '<a id="' .. htmlEscape(anchor_id) .. '" class="wr-thought-link" data-wr-book="' .. htmlEscape(book_id or '')
+            local open_a_with_id = '<a id="' .. htmlEscape(anchor_id) .. '" class="wr-thought-link"' .. data_wr_attr
+                .. ' data-wr-book="' .. htmlEscape(book_id or '')
                 .. '" data-wr-chapter="' .. htmlEscape(chapter_uid or '')
-                .. '" data-wr-range="' .. htmlEscape(ul.range_str)
                 .. '" href="' .. htmlEscape(href) .. '">'
 
             -- wrapTextSegments 为每个文本段生成独立的 underline span；逐 span 包裹 <a>。
@@ -440,24 +829,55 @@ function Annotations.process(html, chapter_underlines, thought_reviews, book_id)
         return html, ""
     end
 
-    -- 构建 thought range 快速查找表
-    local thought_map = nil
+    -- 先按原始 range 建立评论信息，再在副本中修正显示位置，避免污染 API 原始数据。
+    local thought_by_range = {}
     if type(thought_reviews) == "table" then
-        thought_map = {}
-        for _, rv in ipairs(thought_reviews) do
-            if rv.range and rv.pageReviews and #rv.pageReviews > 0 then
-                thought_map[rv.range] = true
+        for _, range_review in ipairs(thought_reviews) do
+            if range_review.range and type(range_review.pageReviews) == "table" and #range_review.pageReviews > 0 then
+                thought_by_range[tostring(range_review.range)] = {
+                    hasThought = true,
+                    abstract = firstReviewAbstract(range_review),
+                }
             end
-        end
-        if not next(thought_map) then
-            thought_map = nil
         end
     end
 
-    logger.info("weread annotations: processing", #underlines, "underlines",
-        thought_map and ("thoughts on " .. #underlines) or "")
+    local prepared_underlines = {}
+    for _, underline in ipairs(underlines) do
+        if type(underline) == "table" and underline.range then
+            local original_range = tostring(underline.range)
+            local thought = thought_by_range[original_range]
+            prepared_underlines[#prepared_underlines + 1] = {
+                range = original_range,
+                originalRange = original_range,
+                hasThought = thought and thought.hasThought or false,
+                abstract = thought and thought.abstract or nil,
+            }
+        end
+    end
 
-    local processed = Annotations.injectUnderlines(html, underlines, thought_map, book_id, chapter_underlines.chapterUid)
+    local has_thoughts = next(thought_by_range) ~= nil
+    logger.info(
+        "weread annotations: processing", #prepared_underlines, "underlines",
+        has_thoughts and "with thoughts" or ""
+    )
+
+    if has_thoughts then
+        local text_runes, html_starts, html_ends = buildTextMapping(stripLeadingBOM(html))
+        for _, underline in ipairs(prepared_underlines) do
+            if underline.hasThought and underline.abstract then
+                local corrected = fixUnderlineRange(text_runes, html_starts, html_ends, underline)
+                if corrected then
+                    underline.range = corrected
+                end
+            end
+        end
+    end
+
+    local processed = Annotations.injectUnderlines(
+        html, prepared_underlines, has_thoughts and thought_by_range or nil,
+        book_id, chapter_underlines.chapterUid
+    )
 
     -- 不再把微信读书想法/评论写入章节 body。
     -- 评论内容已由 thoughts.lua 缓存为 JSON；正文只保留划线锚点和视觉星号。
@@ -466,7 +886,7 @@ function Annotations.process(html, chapter_underlines, thought_reviews, book_id)
 
     if processed ~= html then
         local css = Annotations.UNDERLINE_CSS
-        if thought_map then
+        if has_thoughts then
             css = css .. "\n" .. Annotations.THOUGHT_CSS
         end
         return processed, css

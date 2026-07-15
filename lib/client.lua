@@ -102,6 +102,32 @@ local function absolute_url(base_url, location)
     return prefix .. location
 end
 
+local function url_origin(url)
+    local scheme, authority = tostring(url or ""):match("^(https?)://([^/]+)")
+    if not scheme then
+        return nil
+    end
+    return scheme:lower() .. "://" .. authority:lower()
+end
+
+local function is_weread_url(url)
+    local authority = tostring(url or ""):match("^https?://([^/]+)")
+    if not authority then
+        return false
+    end
+    local host = authority:lower():gsub(":%d+$", "")
+    return host == "weread.qq.com" or host:sub(-#".weread.qq.com") == ".weread.qq.com"
+end
+
+local function clear_cross_origin_headers(headers)
+    for key in pairs(headers or {}) do
+        local name = tostring(key):lower()
+        if name == "authorization" or name == "cookie" or name == "origin" then
+            headers[key] = nil
+        end
+    end
+end
+
 local function transport_request(transport, request, timeout)
     timeout = timeout or DEFAULT_TIMEOUT_SECONDS
     local previous_timeout = transport.TIMEOUT
@@ -181,7 +207,11 @@ function Client:request_follow(opts, max_redirects)
             if not location then
                 return text, code, resp_headers, status
             end
-            url = absolute_url(url, location)
+            local next_url = absolute_url(url, location)
+            if url_origin(url) ~= url_origin(next_url) then
+                clear_cross_origin_headers(opts.headers)
+            end
+            url = next_url
             opts.method = "GET"
             opts.body = nil
             opts.headers = opts.headers or {}
@@ -259,15 +289,17 @@ function Client:get_text(url, opts)
     local headers = {
         ["Accept"] = opts.accept or "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         ["Referer"] = opts.referer or "https://weread.qq.com/",
-        ["Cookie"] = Cookie.to_header(cookies),
     }
+    if is_weread_url(url) then
+        headers["Cookie"] = Cookie.to_header(cookies)
+    end
     local text, code, resp_headers = self:request({
         url = url,
         method = "GET",
         headers = headers,
     })
     local set_cookie = header_value(resp_headers, "set-cookie")
-    if set_cookie then
+    if set_cookie and is_weread_url(url) then
         self.settings:set("cookies", Cookie.merge_set_cookie(cookies, set_cookie))
         self.settings:flush()
     end
@@ -304,20 +336,23 @@ function Client:get_binary(url, opts)
     local headers = {
         ["Accept"] = opts.accept or "*/*",
         ["Referer"] = opts.referer or "https://weread.qq.com/",
-        ["Cookie"] = Cookie.to_header(cookies),
     }
+    if is_weread_url(url) then
+        headers["Cookie"] = Cookie.to_header(cookies)
+    end
     if opts.headers then
         for key, value in pairs(opts.headers) do
             headers[key] = value
         end
     end
-    local text, code, resp_headers = self:request_follow({
+    local request_opts = {
         url = url,
         method = "GET",
         headers = headers,
-    })
+    }
+    local text, code, resp_headers = self:request_follow(request_opts)
     local set_cookie = header_value(resp_headers, "set-cookie")
-    if set_cookie then
+    if set_cookie and is_weread_url(request_opts.url) then
         self.settings:set("cookies", Cookie.merge_set_cookie(cookies, set_cookie))
         self.settings:flush()
     end
@@ -629,6 +664,18 @@ function Client:report_read(payload, referer)
     })
 end
 
+function Client:refresh_read_context(book_id)
+    book_id = tostring(book_id or "")
+    if book_id == "" then
+        error("book_id is required to refresh reading context")
+    end
+    return self:post_json("https://weread.qq.com/web/book/chapterInfos", {
+        bookIds = { book_id },
+    }, {
+        referer = "https://weread.qq.com/web/reader/" .. WeRead.urlencode(book_id),
+    })
+end
+
 function Client:get_chapter_underlines(book_id, chapter_uid)
     if not book_id or tostring(book_id) == "" then
         return false, nil, "empty book_id"
@@ -652,22 +699,10 @@ function Client:get_chapter_underlines(book_id, chapter_uid)
     return true, result
 end
 
-function Client:get_chapter_reviews(book_id, chapter_uid, ranges)
-    if not book_id or tostring(book_id) == "" then
-        return false, nil, "empty book_id"
-    end
-    if not chapter_uid then
-        return false, nil, "empty chapter_uid"
-    end
-    if type(ranges) ~= "table" or #ranges == 0 then
-        return true, { reviews = {} }
-    end
-
+function Client:build_chapter_review_batches(ranges)
     local BATCH_SIZE = 5
-    local all_reviews = {}
-    local socket_ok, socket = pcall(require, "socket")
-
-    for batch_start = 1, #ranges, BATCH_SIZE do
+    local batches = {}
+    for batch_start = 1, #(ranges or {}), BATCH_SIZE do
         local batch = {}
         for index = batch_start, math.min(batch_start + BATCH_SIZE - 1, #ranges) do
             batch[#batch + 1] = {
@@ -677,22 +712,56 @@ function Client:get_chapter_reviews(book_id, chapter_uid, ranges)
                 synckey = 0,
             }
         end
+        batches[#batches + 1] = batch
+    end
+    return batches
+end
 
-        local ok, result = pcall(function()
-            return self:gateway("/book/readreviews", {
-                bookId = tostring(book_id),
-                chapterUid = chapter_uid,
-                reviews = batch,
-            })
-        end)
+function Client:get_chapter_reviews_batch(book_id, chapter_uid, batch)
+    if not book_id or tostring(book_id) == "" then
+        return false, nil, "empty book_id"
+    end
+    if not chapter_uid then
+        return false, nil, "empty chapter_uid"
+    end
+    if type(batch) ~= "table" or #batch == 0 then
+        return true, { reviews = {} }
+    end
 
+    local ok, result = pcall(function()
+        return self:gateway("/book/readreviews", {
+            bookId = tostring(book_id),
+            chapterUid = chapter_uid,
+            reviews = batch,
+        })
+    end)
+    if not ok then
+        return false, nil, tostring(result)
+    end
+    if type(result) ~= "table" or type(result.reviews) ~= "table" then
+        return false, nil, "readreviews: gateway returned invalid data"
+    end
+    return true, result
+end
+
+function Client:get_chapter_reviews(book_id, chapter_uid, ranges)
+    if type(ranges) ~= "table" or #ranges == 0 then
+        return true, { reviews = {} }
+    end
+
+    local all_reviews = {}
+    local batches = self:build_chapter_review_batches(ranges)
+    local socket_ok, socket = pcall(require, "socket")
+
+    for batch_index, batch in ipairs(batches) do
+        local ok, result = self:get_chapter_reviews_batch(book_id, chapter_uid, batch)
         if ok and type(result) == "table" and type(result.reviews) == "table" then
-            for _, review in ipairs(result.reviews) do
+            for _i, review in ipairs(result.reviews) do
                 all_reviews[#all_reviews + 1] = review
             end
         end
 
-        if batch_start + BATCH_SIZE <= #ranges and socket_ok and socket.sleep then
+        if batch_index < #batches and socket_ok and socket.sleep then
             socket.sleep(0.3)
         end
     end

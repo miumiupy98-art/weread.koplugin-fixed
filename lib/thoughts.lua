@@ -76,6 +76,38 @@ end
 -- Must run before image rewriting (range indices are based on original HTML).
 -- @return processed_html, annotation_css
 
+function Thoughts.fetch_underlines(client, settings, book_id, chapter_uid, enabled)
+    if enabled ~= true then
+        return true, nil, {}
+    end
+    if not settings:is_cookie_configured() then
+        return false, nil, {}, "cookie not configured"
+    end
+    local ok, data, err = client:get_chapter_underlines(book_id, chapter_uid)
+    if not ok or type(data) ~= "table" then
+        return false, nil, {}, err or "no underline data"
+    end
+    data.chapterUid = chapter_uid
+    return true, data, Thoughts.collect_ranges(data)
+end
+
+function Thoughts.apply_data(settings, book_id, chapter_uid, xhtml, underlines_data, reviews)
+    if type(underlines_data) ~= "table" then
+        return xhtml, ""
+    end
+    if type(reviews) == "table" and #reviews > 0 then
+        Thoughts.save_cache(settings, book_id, chapter_uid, reviews)
+    end
+    underlines_data.chapterUid = chapter_uid
+    local processed, annotation_css = Annotations.process(
+        xhtml, underlines_data, reviews, book_id
+    )
+    if processed ~= xhtml then
+        log_info("injected underlines for chapter:", chapter_uid)
+    end
+    return processed, annotation_css or ""
+end
+
 function Thoughts.apply(client, settings, book_id, chapter_uid, xhtml)
     if type(xhtml) ~= "string" or xhtml == "" then
         return xhtml, ""
@@ -105,12 +137,9 @@ function Thoughts.apply(client, settings, book_id, chapter_uid, xhtml)
         end
     end
 
-    ul_data.chapterUid = chapter_uid
-    local processed, annotation_css = Annotations.process(xhtml, ul_data, thought_reviews, book_id)
-    if processed ~= xhtml then
-        log_info("injected underlines for chapter:", chapter_uid)
-    end
-    return processed, annotation_css or ""
+    return Thoughts.apply_data(
+        settings, book_id, chapter_uid, xhtml, ul_data, thought_reviews
+    )
 end
 
 function Thoughts.merge_css(base_css, annotation_css)
