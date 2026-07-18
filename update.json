@@ -1,8 +1,17 @@
 {
-  "version": "0.3.5",
-  "name": "WeRead KOReader Plugin Enhanced v0.3.5",
-  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.3.5/weread-koplugin-v0.3.5-ota.zip",
-  "sha256": "7df441468d3d52f8882f34e127070ba6fbc1fbd33eb15e34573b2a257ca6f27e",
-  "notes": "修复扫码登录后的自动阅读时长上报；合并上游 0.2.1 的书架筛选、下载容错、EPUB 打包与请求安全改进；改善部分评论、划线与正文错位。",
-  "delete_list": []
+  "version": "0.9.9",
+  "name": "MiuRead 0.9.9 旧用户迁移版",
+  "notes": "从旧版 WeRead 0.3.6.7 迁移到独立 MiuRead 项目的过渡版本；自动导入旧账户、主要设置及可识别的本地书籍记录；后续更新切换至 MiuRead 独立仓库。旧设置文件不会被主动删除。",
+  "package_url": "https://github.com/miumiupy98-art/weread.koplugin-fixed/releases/download/v0.9.9-migration/miuread-v0.9.9-legacy-ota.zip",
+  "sha256": "739fe55256afe0a45a2a8a045aced7d59c171ba9032daa504c22c7ae9af4a3ed",
+  "delete_list": [
+    "lib",
+    "fonts",
+    "CHANGELOG.md",
+    "README.md",
+    "NOTICE.md",
+    "RELEASE-SAFETY.md",
+    "RELEASE-NOTES-0.3.6.7.md",
+    "BETA-UPGRADE-0.3.6.7.md"
+  ]
 }
